@@ -75,8 +75,8 @@ TUI controls:
 - `Tab`/`j`/`k`/`Enter`: focus workspace navigation or its active pane, navigate, and open the selected editor. On the dashboard, `←`/`→` or `1`/`2`/`3`/`4` select the Scenes, Sequences, Colors, and YAML Draft workspaces; `Enter` opens the selected entry.
 - `n`/`e`: create or edit a scene; `t`: create a generated date-window automation (`relative` offsets or recurring `fixed` MM-DD dates).
 - `c`: browse, add, and edit reusable XY colors. Press `p` in the color form for the keyboard-driven CIE 1931 `x,y` picker. Scene forms choose a catalog color; the color name is draft-only and is removed before HA publish.
-- `h`: edit ordered holiday sequences. Use `a` to add a scene, `x` to remove one occurrence, `[`/`]` to reorder, and `n` to create a selector sequence. `b` stages the managed `holiday_lights` script and `input_select.holiday` infrastructure from HA; it is intentionally not a normal import ref.
-- `b` bootstraps the managed `holiday_lights` script and `input_select.holiday` infrastructure from the live HA YAML. This is an explicit action so ordinary imports remain limited to the refs in `config.yaml`; review its diff before publishing.
+- `h`: edit ordered holiday sequences. Use `a` to add a scene, `x` to remove one occurrence, `[`/`]` to reorder, and `n` to create a selector sequence. `b` syncs the managed `holiday_lights` script and `input_select.holiday` infrastructure from HA; it is intentionally not a normal import ref.
+- `b` syncs the managed `holiday_lights` script and `input_select.holiday` infrastructure from the live HA YAML. This is an explicit action so ordinary imports remain limited to the refs in `config.yaml`; review its diff before publishing.
 - `v`: simulate the selected scene in the TUI without touching HA.
 - `i`: read-only inventory of HA lights, color modes, and effect counts.
 - `p`: type `PREVIEW` to apply the selected scene to real lights; `r` restores the captured state.

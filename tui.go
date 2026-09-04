@@ -233,7 +233,7 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	if result, ok := message.(bootstrapResultMsg); ok {
 		m.bootstrapLoading = false
 		if result.err != nil {
-			m.message = "Bootstrap failed: " + result.err.Error()
+			m.message = "HA infrastructure sync failed: " + result.err.Error()
 		} else {
 			m.bundle, m.dirty = result.bundle, true
 			m.message = "Managed holiday infrastructure staged in the draft. Review the diff before publishing."
@@ -481,7 +481,7 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.bootstrapLoading, m.message = true, ""
 				return m, runBootstrapCmd(store, m.bundle)
 			} else {
-				m.message = "Bootstrap requires the configured Home Assistant SSH connection."
+				m.message = "HA infrastructure sync requires the configured Home Assistant SSH connection."
 			}
 		case "tab":
 			m.dashboardFocus = 1 - m.dashboardFocus
@@ -742,7 +742,7 @@ func renderHelp(width, height int) string {
 		"  c             color catalog   h holiday sequences\n" +
 		"  t             create a schedule\n" +
 		"  x             delete selected scene\n" +
-		"  v             simulation   p preview   u publish   b bootstrap\n" +
+		"  v             simulation   p preview   u publish   b sync HA infra\n" +
 		"  s             save draft    d diff\n\n" +
 		sectionStyle.Render("Editors") + "\n" +
 		"  Tab/↑↓        move between fields\n" +
@@ -830,7 +830,7 @@ func (m statusModel) renderDashboard() string {
 		lipgloss.NewStyle().Width(rightWidth).Render(right.String()),
 	)
 	footer := footerStyle.Render("Tab focus  ←/→ workspace  1/2/3/4 jump  Enter open/edit  ? help  q quit\n" +
-		"n new  x del  c colors  h seq  b boot  v sim  p prev  i inv  s save  d diff  u pub")
+		"n new  x del  c colors  h seq  b sync infra  v sim  p prev  i inv  s save  d diff  u pub")
 	footer += "\n" + dashboardHelpView(width)
 	return header + "\n" + rule + "\n" + body + "\n" + rule + "\n" + footer + "\n"
 }
@@ -851,7 +851,7 @@ func (m statusModel) renderDashboardWorkspace(width int) string {
 			result.WriteString(line + "\n")
 		}
 		if len(holidays) == 0 {
-			result.WriteString(mutedStyle.Render("  No sequences. Press n to create one or b to bootstrap HA infrastructure.") + "\n")
+			result.WriteString(mutedStyle.Render("  No sequences. Press n to create one or b to sync HA infrastructure.") + "\n")
 		}
 		if len(holidays) > 0 && m.sequenceHoliday < len(holidays) {
 			selected := holidays[m.sequenceHoliday]
