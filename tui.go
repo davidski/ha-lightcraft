@@ -2675,11 +2675,6 @@ func RenderPrompt(m statusModel) string {
 }
 
 func (m statusModel) renderUpgradeModal() string {
-	modal := titleStyle.Render("Upgrade legacy lighting setup") + "\n\n" +
-		"The old holiday_lights model was detected.\n\n" +
-		"This keeps the original script as holiday_lights_legacy_backup, preserves existing scenes, selector options, and automations, and stages the new sequence and scheduling infrastructure.\n\n" +
-		"Type UPGRADE to stage it, then press d to review the diff before publishing.\n> " + m.input + "\n\nEnter confirm  ESC cancel"
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 3).Render(modal)
 	width, height := m.width, m.height
 	if width < 1 {
 		width = 80
@@ -2687,6 +2682,15 @@ func (m statusModel) renderUpgradeModal() string {
 	if height < 1 {
 		height = 24
 	}
+	modal := titleStyle.Render("Upgrade legacy lighting setup") + "\n\n" +
+		"The old holiday_lights model was detected.\n\n" +
+		"This keeps the original script as holiday_lights_legacy_backup, preserves existing scenes, selector options, and automations, and stages the new sequence and scheduling infrastructure.\n\n" +
+		"Type UPGRADE to stage it, then press d to review the diff before publishing.\n> " + m.input + "\n\nEnter confirm  ESC cancel"
+	boxWidth := min(78, width-2)
+	if boxWidth < 8 {
+		boxWidth = 8
+	}
+	box := lipgloss.NewStyle().Width(boxWidth).Border(lipgloss.RoundedBorder()).Padding(1, 3).Render(modal)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 

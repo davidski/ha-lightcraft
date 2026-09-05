@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestRenderStatusListsKinds(t *testing.T) {
@@ -44,6 +46,19 @@ func TestPublishPromptIncludesDiff(t *testing.T) {
 	view := RenderPrompt(statusModel{prompt: "publish", baseline: &old, bundle: next})
 	if !strings.Contains(view, "--- scenes") || !strings.Contains(view, "+++ scenes") || !strings.Contains(view, "Type PUBLISH") {
 		t.Fatalf("prompt = %q", view)
+	}
+}
+
+func TestUpgradeModalFitsTerminal(t *testing.T) {
+	m := statusModel{width: 80, height: 24, prompt: "upgrade-legacy"}
+	view := m.renderUpgradeModal()
+	for _, line := range strings.Split(view, "\n") {
+		if lipgloss.Width(line) > m.width {
+			t.Fatalf("modal line is %d columns in an %d-column terminal: %q", lipgloss.Width(line), m.width, line)
+		}
+	}
+	if !strings.Contains(view, "Upgrade legacy lighting setup") {
+		t.Fatalf("modal title was clipped: %q", view)
 	}
 }
 
