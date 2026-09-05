@@ -2685,7 +2685,7 @@ func (m statusModel) renderUpgradeModal() string {
 	modal := titleStyle.Render("Upgrade legacy lighting setup") + "\n\n" +
 		"The old holiday_lights model was detected.\n\n" +
 		"This keeps the original script as holiday_lights_legacy_backup, preserves existing scenes, selector options, and automations, and stages the new sequence and scheduling infrastructure.\n\n" +
-		"Type UPGRADE to stage it, then press d to review the diff before publishing.\n> " + m.input + "\n\nEnter confirm  ESC cancel"
+		"Type UPGRADE and press Enter to stage the upgrade. Then press d to review the diff before publishing.\n> " + m.input + "\n\nEnter confirm  ESC cancel"
 	boxWidth := min(78, width-2)
 	if boxWidth < 8 {
 		boxWidth = 8
