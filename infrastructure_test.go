@@ -43,6 +43,28 @@ func TestReplaceHolidaySequencePreservesOrderAndDuplicates(t *testing.T) {
 	}
 }
 
+func TestUpgradeLegacyInfrastructureKeepsOriginalScript(t *testing.T) {
+	bundle := sequenceBundle()
+	bundle.Files[Scenes] = Config{Kind: Scenes, Data: []any{
+		map[string]any{"id": "red", "name": "Red", "entities": map[string]any{"light.one": map[string]any{"state": "on", "rgb_color": []any{255, 0, 0}, "brightness": 180}}},
+		map[string]any{"id": "white", "name": "White", "entities": map[string]any{"light.one": map[string]any{"state": "on", "rgb_color": []any{255, 255, 255}, "brightness": 180}}},
+	}}
+	upgraded, err := upgradeLegacyInfrastructure(bundle, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts := upgraded.Files[Scripts].Data.(map[string]any)
+	if scripts[holidayScriptID+"_legacy_backup"] == nil {
+		t.Fatal("legacy script backup missing")
+	}
+	if len(colorSequences(upgraded)) != 1 {
+		t.Fatalf("new sequence missing: %#v", colorSequences(upgraded))
+	}
+	if holidaySequences(upgraded)["Christmas"][0] != "red" {
+		t.Fatal("legacy sequence data changed")
+	}
+}
+
 func TestValidateHolidaySequencesRejectsMissingScene(t *testing.T) {
 	bundle := ensureHolidayInfrastructure(sequenceBundle(), sequenceBundle())
 	sequences := holidaySequences(bundle)

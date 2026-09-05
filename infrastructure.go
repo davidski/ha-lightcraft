@@ -66,6 +66,7 @@ func holidaySequences(bundle Bundle) map[string][]string {
 		if !ok {
 			continue
 		}
+		result[holiday] = []string{}
 		for _, value := range values {
 			if sceneID, ok := value.(string); ok && sceneID != "" {
 				result[holiday] = append(result[holiday], strings.TrimPrefix(sceneID, "scene."))
@@ -81,6 +82,32 @@ func ensureHolidayInfrastructure(bundle, source Bundle) Bundle {
 		return bundle
 	}
 	return result
+}
+
+func legacyLightingDetected(bundle Bundle) bool {
+	return len(holidaySequences(bundle)) > 0 && len(colorSequences(bundle)) == 0
+}
+
+// Upgrade keeps the complete old script under a new HA script ID before
+// installing the managed core. No old scenes, selector options, or automation
+// entries are removed.
+func upgradeLegacyInfrastructure(bundle, source Bundle) (Bundle, error) {
+	result, err := cloneBundle(bundle)
+	if err != nil {
+		return Bundle{}, err
+	}
+	scripts, _ := result.Files[Scripts].Data.(map[string]any)
+	if original, ok := scripts[holidayScriptID]; ok {
+		scripts[holidayScriptID+"_legacy_backup"] = original
+	}
+	result.Files[Scripts] = Config{Kind: Scripts, Data: scripts}
+	for holiday := range holidaySequences(source) {
+		result, err = convertLegacySequence(result, holiday)
+		if err != nil {
+			return Bundle{}, fmt.Errorf("upgrade %s: %w", holiday, err)
+		}
+	}
+	return bootstrapHolidayInfrastructure(result, source)
 }
 
 func bootstrapHolidayInfrastructure(bundle, source Bundle) (Bundle, error) {
@@ -103,6 +130,15 @@ func bootstrapHolidayInfrastructure(bundle, source Bundle) (Bundle, error) {
 		scripts = map[string]any{}
 	}
 	scripts[holidayScriptID] = coreHolidayLightsScript(sequences)
+	if sourceScripts, ok := source.Files[Scripts].Data.(map[string]any); ok {
+		if original, ok := sourceScripts[holidayScriptID].(map[string]any); ok && original["sequence"] != nil {
+			copy, copyErr := cloneBundle(source)
+			if copyErr != nil {
+				return Bundle{}, copyErr
+			}
+			scripts[holidayScriptID] = copy.Files[Scripts].Data.(map[string]any)[holidayScriptID]
+		}
+	}
 	result.Files[Scripts] = Config{Kind: Scripts, Data: scripts}
 	if err := updateHolidaySelector(&result, sequences); err != nil {
 		return Bundle{}, err

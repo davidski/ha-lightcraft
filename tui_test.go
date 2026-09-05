@@ -42,7 +42,7 @@ func TestPublishPromptIncludesDiff(t *testing.T) {
 	next := Bundle{Files: map[ConfigKind]Config{Scenes: {Kind: Scenes, Data: []any{map[string]any{"id": "halloween", "name": "Halloween", "entities": map[string]any{}}}}}}
 	next, _ = withHash(next)
 	view := RenderPrompt(statusModel{prompt: "publish", baseline: &old, bundle: next})
-	if !strings.Contains(view, "[scenes]") || !strings.Contains(view, "Type PUBLISH") {
+	if !strings.Contains(view, "--- scenes") || !strings.Contains(view, "+++ scenes") || !strings.Contains(view, "Type PUBLISH") {
 		t.Fatalf("prompt = %q", view)
 	}
 }

@@ -357,7 +357,7 @@ func refsForKind(refs []ConfigRef, kind ConfigKind) []ConfigRef {
 	return result
 }
 
-func stringMustJSON(value map[string]any) string {
+func stringMustJSON(value any) string {
 	data, _ := canonicalJSON(value)
 	return string(data)
 }

@@ -51,7 +51,7 @@ func ValidateBundle(bundle Bundle) error {
 			return fmt.Errorf("unsupported config kind %s", kind)
 		}
 	}
-	return nil
+	return validateLighting(bundle)
 }
 
 func validateHolidaySequences(bundle Bundle, script map[string]any) error {

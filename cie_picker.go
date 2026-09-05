@@ -49,6 +49,6 @@ func renderCIEPicker(color CIEColor) string {
 	preview := lipgloss.NewStyle().Background(lipgloss.Color(cieRGBHex(color))).Render("              ")
 	content := titleStyle.Render("CIE xy Color") + "\n\n" + plane.String() + "\n" +
 		fmt.Sprintf("  x: %.4f     y: %.4f\n\n  Preview: %s\n", color.X, color.Y, preview) +
-		footerStyle.Render("←→ x  ↑↓ y  Shift/Ctrl + arrows coarse  Enter accept  Esc cancel")
+		footerStyle.Render("←→ x  ↑↓ y  Shift/Ctrl + arrows coarse  Enter accept  ESC cancel")
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(content) + "\n"
 }

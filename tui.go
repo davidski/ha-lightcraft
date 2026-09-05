@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"gopkg.in/yaml.v3"
@@ -25,6 +26,9 @@ var (
 )
 
 type statusModel struct {
+	planner                bool
+	lighting               lightingEditor
+	scheduleSelected       int
 	bundle                 Bundle
 	draftDir               string
 	baseline               *Bundle
@@ -79,6 +83,7 @@ type statusModel struct {
 	deleteInspectionErr    string
 	deleteScroll           int
 	operationLoading       bool
+	loadingSpinner         spinner.Model
 	ciePicker              bool
 	ciePickerX             float64
 	ciePickerY             float64
@@ -91,6 +96,26 @@ type statusModel struct {
 	helpView               bool
 	diffScroll             int
 	simulationScroll       int
+}
+
+var workspaceOrder = []int{0, 1, 4, 2, 3} // scenes, sequences, schedules, colors, YAML
+
+func workspacePosition(workspace int) int {
+	for i, value := range workspaceOrder {
+		if value == workspace {
+			return i
+		}
+	}
+	return 0
+}
+func workspaceAt(position int) int {
+	if position < 0 {
+		position = 0
+	}
+	if position >= len(workspaceOrder) {
+		position = len(workspaceOrder) - 1
+	}
+	return workspaceOrder[position]
 }
 
 type deleteInspectionMsg struct {
@@ -118,10 +143,34 @@ type bootstrapResultMsg struct {
 	bundle Bundle
 	err    error
 }
+type upgradeResultMsg struct {
+	bundle Bundle
+	err    error
+}
 
-func (m statusModel) Init() tea.Cmd { return nil }
+func (m statusModel) Init() tea.Cmd {
+	return spinner.Tick
+}
 
 func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if tick, ok := message.(spinner.TickMsg); ok {
+		if len(m.loadingSpinner.Spinner.Frames) == 0 {
+			m.loadingSpinner = spinner.New()
+		}
+		var cmd tea.Cmd
+		m.loadingSpinner, cmd = m.loadingSpinner.Update(tick)
+		return m, cmd
+	}
+	if result, ok := message.(lightingControlMsg); ok {
+		m.operationLoading = false
+		if result.err != nil {
+			m.lighting.error = result.err.Error()
+		} else {
+			m.lighting.form, m.lighting.error = "", ""
+			m.message = "Playback " + map[string]string{"paused": "paused", "idle": "resumed according to its schedule"}[result.option] + " in Home Assistant."
+		}
+		return m, nil
+	}
 	if inspected, ok := message.(deleteInspectionMsg); ok {
 		if inspected.id == m.deleteID {
 			m.deleteLoading = false
@@ -134,6 +183,14 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if inventory, ok := message.(inventoryResultMsg); ok {
 		if inventory.request != m.inventoryRequest {
+			return m, nil
+		}
+		if m.planner {
+			if inventory.err != nil {
+				m.lighting.error = "Discovery failed; enter light IDs manually: " + inventory.err.Error()
+			} else {
+				m.inventoryStates, m.inventoryLocations = inventory.states, inventory.locations
+			}
 			return m, nil
 		}
 		if m.lightLoading {
@@ -207,6 +264,10 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.prompt, m.input = "", ""
 		} else {
 			m.message = "Published, verified, and backed up."
+			if result.baseline != nil {
+				m.bundle.SourceHash = result.baseline.SourceHash
+				m.refs = bundleRefs(*result.baseline)
+			}
 			if result.warning != "" {
 				m.message += " " + result.warning
 			}
@@ -240,17 +301,43 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if result, ok := message.(upgradeResultMsg); ok {
+		m.bootstrapLoading = false
+		if result.err != nil {
+			m.message = "Legacy upgrade failed: " + result.err.Error()
+		} else {
+			m.bundle, m.dirty = result.bundle, true
+			m.message = "Legacy infrastructure upgraded without deleting old data. Press d to review the backup script and diff before publishing."
+		}
+		m.prompt, m.input = "", ""
+		return m, nil
+	}
 	if size, ok := message.(tea.WindowSizeMsg); ok {
 		m.width, m.height = size.Width, size.Height
 		return m, nil
 	}
 	if key, ok := message.(tea.KeyMsg); ok {
-		if key.String() == "q" && m.dirty && m.prompt == "" {
+		if key.String() == "q" && m.dirty && m.prompt == "" && (!m.planner || m.lighting.form == "") {
 			m.prompt, m.input = "quit-confirm", ""
 			return m, nil
 		}
 		if key.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.prompt == "quit-confirm" {
+			return m.updatePrompt(key)
+		}
+		if m.prompt == "upgrade-legacy" {
+			return m.updatePrompt(key)
+		}
+		if m.sequenceView && m.prompt != "" {
+			return m.updatePrompt(key)
+		}
+		if m.planner && key.String() == "q" && m.lighting.form == "" {
+			return m, tea.Quit
+		}
+		if m.planner {
+			return m.updateLighting(key)
 		}
 		if m.lightLoading {
 			if key.String() == "esc" {
@@ -282,7 +369,26 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.inventoryFocus = 1 - m.inventoryFocus
 			case "enter":
 				m.inventoryFocus = 1
-			case "up", "k":
+				m.inventorySection = 0
+			case "left":
+				if m.inventoryFocus == 1 {
+					m.inventoryFocus = 0
+				}
+			case "right":
+				if m.inventoryFocus == 0 {
+					m.inventoryFocus = 1
+					m.inventorySection = 0
+				}
+			case "up":
+				if m.inventoryFocus == 1 {
+					if m.inventorySection > 0 {
+						m.inventorySection--
+					}
+				} else if m.inventorySelected > 0 {
+					m.inventorySelected--
+					m.inventoryDetailScroll = 0
+				}
+			case "k":
 				if m.inventoryFocus == 0 {
 					if m.inventorySelected > 0 {
 						m.inventorySelected--
@@ -291,7 +397,16 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.inventoryDetailScroll > 0 {
 					m.inventoryDetailScroll--
 				}
-			case "down", "j":
+			case "down":
+				if m.inventoryFocus == 1 {
+					if m.inventorySection < 1 {
+						m.inventorySection++
+					}
+				} else if m.inventorySelected+1 < len(ids) {
+					m.inventorySelected++
+					m.inventoryDetailScroll = 0
+				}
+			case "j":
 				if m.inventoryFocus == 0 {
 					if m.inventorySelected+1 < len(ids) {
 						m.inventorySelected++
@@ -354,14 +469,7 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 						m.message = "Cannot delete a color still referenced by a scene."
 						break
 					}
-					if next, err := deleteColor(m.bundle, id); err != nil {
-						m.message = "Color delete failed: " + err.Error()
-					} else {
-						m.bundle, m.dirty, m.message = next, true, "Deleted color "+id+"."
-						if m.colorSelected >= len(colorIDs(next)) && m.colorSelected > 0 {
-							m.colorSelected--
-						}
-					}
+					m.prompt, m.pending, m.input = "delete-color", id, ""
 				}
 			}
 			return m, nil
@@ -444,40 +552,48 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.diffScroll = 0
 			}
 		case "v":
+			if m.dashboardWorkspace != 0 {
+				m.message = "Select a scene to simulate; sequence steps show their timing in the editor."
+				break
+			}
 			m.simulate = !m.simulate
 			m.simulationScroll = 0
 		case "i":
 			if m.stateAPI == nil {
-				m.message = "Inventory unavailable: configure HA URL and token."
+				m.message = "Inventory unavailable: set HOMEASSISTANT_URL and HOMEASSISTANT_TOKEN."
 				break
 			}
 			m.inventory, m.inventoryLoading = true, true
 			m.inventoryRequest++
 			m.message = ""
 			return m, loadInventoryCmd(m.stateAPI, m.inventoryRequest)
-		case "c":
-			m.dashboardWorkspace = 2
-			m.colorView, m.colorSelected = true, 0
-		case "h":
-			m.dashboardWorkspace = 1
-			m.sequenceView, m.sequenceHoliday, m.sequenceSelected = true, 0, 0
-		case "1", "2", "3", "4":
-			m.dashboardWorkspace = int(key.String()[0] - '1')
+		case "1", "2", "3", "4", "5":
+			m.dashboardWorkspace = workspaceAt(int(key.String()[0] - '1'))
 			m.dashboardFocus = 1
 		case "left":
-			if m.dashboardWorkspace > 0 {
-				m.dashboardWorkspace--
-				m.dashboardFocus = 1
+			if position := workspacePosition(m.dashboardWorkspace); position > 0 {
+				m.dashboardWorkspace = workspaceAt(position - 1)
+				if m.dashboardFocus != 0 {
+					m.dashboardFocus = 1
+				}
 			}
 		case "right":
-			if m.dashboardWorkspace < 3 {
-				m.dashboardWorkspace++
-				m.dashboardFocus = 1
+			if position := workspacePosition(m.dashboardWorkspace); position < len(workspaceOrder)-1 {
+				m.dashboardWorkspace = workspaceAt(position + 1)
+				if m.dashboardFocus != 0 {
+					m.dashboardFocus = 1
+				}
 			}
 		case "b":
+			if legacyLightingDetected(m.bundle) {
+				m.prompt, m.input = "upgrade-legacy", ""
+				break
+			}
 			if store, ok := m.store.(interface {
 				ReadAll(context.Context) (Bundle, error)
 			}); ok {
+				baseline := m.bundle
+				m.baseline = &baseline
 				m.bootstrapLoading, m.message = true, ""
 				return m, runBootstrapCmd(store, m.bundle)
 			} else {
@@ -487,11 +603,15 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.dashboardFocus = 1 - m.dashboardFocus
 		case "up", "k":
 			if m.dashboardFocus == 0 {
-				if m.dashboardWorkspace > 0 {
-					m.dashboardWorkspace--
+				if position := workspacePosition(m.dashboardWorkspace); position > 0 {
+					m.dashboardWorkspace = workspaceAt(position - 1)
 				}
 			} else {
 				switch m.dashboardWorkspace {
+				case 4:
+					if m.scheduleSelected > 0 {
+						m.scheduleSelected--
+					}
 				case 1:
 					if m.sequenceHoliday > 0 {
 						m.sequenceHoliday--
@@ -512,13 +632,17 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "down", "j":
 			if m.dashboardFocus == 0 {
-				if m.dashboardWorkspace < 3 {
-					m.dashboardWorkspace++
+				if position := workspacePosition(m.dashboardWorkspace); position < len(workspaceOrder)-1 {
+					m.dashboardWorkspace = workspaceAt(position + 1)
 				}
 			} else {
 				switch m.dashboardWorkspace {
+				case 4:
+					if m.scheduleSelected+1 < len(lightingAssignments(m.bundle)) {
+						m.scheduleSelected++
+					}
 				case 1:
-					if m.sequenceHoliday+1 < len(sequenceHolidays(m.bundle)) {
+					if m.sequenceHoliday+1 < len(colorSequences(m.bundle)) {
 						m.sequenceHoliday++
 					}
 				case 2:
@@ -541,9 +665,21 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.dashboardWorkspace == 3 {
 				m.contentView, m.contentScroll = true, 0
 			} else if m.dashboardWorkspace == 1 {
-				m.sequenceView, m.sequenceHoliday, m.sequenceSelected = true, 0, 0
+				m.openLighting(0)
+				m.lighting.selected = m.sequenceHoliday
+			} else if m.dashboardWorkspace == 4 {
+				m.openLighting(1)
+				m.lighting.selected = m.scheduleSelected
 			} else if m.dashboardWorkspace == 2 {
-				m.colorView, m.colorSelected = true, 0
+				ids := colorIDs(m.bundle)
+				if m.colorSelected < len(ids) {
+					id := ids[m.colorSelected]
+					color := colorDefinitions(m.bundle)[id]
+					m.colorView = false
+					m.prompt, m.pending, m.formField = "color", id, 0
+					m.formValues = []string{color.Name, fmt.Sprintf("%.3f", color.X), fmt.Sprintf("%.3f", color.Y)}
+					m.input = m.formValues[0]
+				}
 			} else if id := m.selectedScene(); id != "" {
 				if !m.refreshLightIDs() {
 					if m.stateAPI != nil {
@@ -559,12 +695,22 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.input = m.formValues[0]
 			}
 		case "n":
+			if m.dashboardWorkspace == 4 {
+				if len(colorSequences(m.bundle)) == 0 {
+					m.message = "Create a color sequence first, then add a schedule here."
+					break
+				}
+				m.openLighting(1)
+				m.editLightingAssignment("")
+				break
+			}
 			if m.dashboardWorkspace == 3 {
 				m.message = "YAML draft is read-only here; use the structured workspaces to edit it."
 				break
 			}
 			if m.dashboardWorkspace == 1 {
-				m.prompt, m.input = "sequence-new", ""
+				m.openLighting(0)
+				m.editLightingSequence("")
 				break
 			}
 			if m.dashboardWorkspace == 2 {
@@ -599,13 +745,13 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.formValues = []string{"Halloween", color, m.lightIDs[0], "255"}
 			m.input = m.formValues[0]
-		case "t":
-			m.prompt, m.scheduleField = "schedule", 0
-			m.scheduleValues = []string{"holiday_lighting_schedule", "Holiday lighting", "Halloween", "relative", "10", "31", "-16", "2"}
-			m.input = m.scheduleValues[0]
 		case "e":
-			if m.dashboardWorkspace == 1 {
-				m.sequenceView, m.sequenceSelected = true, 0
+			if m.dashboardWorkspace == 4 {
+				m.openLighting(1)
+				m.lighting.selected = m.scheduleSelected
+			} else if m.dashboardWorkspace == 1 {
+				m.openLighting(0)
+				m.lighting.selected = m.sequenceHoliday
 			} else if m.dashboardWorkspace == 2 {
 				m.colorView = true
 			} else if m.dashboardWorkspace == 3 {
@@ -625,8 +771,35 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.input = m.formValues[0]
 			}
 		case "x":
+			if m.dashboardWorkspace == 4 {
+				m.message = "Open a schedule and set it to disabled to retire it safely."
+				break
+			}
+			if m.dashboardWorkspace == 2 {
+				ids := colorIDs(m.bundle)
+				if m.colorSelected < len(ids) {
+					id := ids[m.colorSelected]
+					if colorReferenced(m.bundle, id) {
+						m.message = "Cannot delete a color still referenced by a scene."
+						break
+					}
+					m.prompt, m.pending, m.input = "delete-color", id, ""
+				}
+				break
+			}
 			if m.dashboardWorkspace == 1 {
-				m.sequenceView, m.sequenceSelected = true, 0
+				ids := lightingIDs(m.bundle, 0)
+				if m.sequenceHoliday < len(ids) {
+					id := ids[m.sequenceHoliday]
+					if next, err := deleteColorSequence(m.bundle, id); err != nil {
+						m.message = "Sequence delete failed: " + err.Error()
+					} else {
+						m.bundle, m.dirty, m.message = next, true, "Deleted sequence "+id+"."
+						if m.sequenceHoliday >= len(lightingIDs(next, 0)) && m.sequenceHoliday > 0 {
+							m.sequenceHoliday--
+						}
+					}
+				}
 			} else if m.dashboardWorkspace == 2 {
 				m.colorView = true
 			} else if m.dashboardWorkspace == 3 {
@@ -642,12 +815,16 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.prompt = "delete-modal"
 			}
 		case "p":
+			if m.dashboardWorkspace != 0 {
+				m.message = "Live preview applies to scenes. Select a scene first."
+				break
+			}
 			if m.stateAPI != nil && m.selectedScene() != "" {
 				m.prompt, m.input = "preview", ""
 			} else if m.selectedScene() == "" {
 				m.message = "Preview unavailable: select a scene first."
 			} else {
-				m.message = "Preview unavailable: configure HA URL and token."
+				m.message = "Preview unavailable: set HOMEASSISTANT_URL and HOMEASSISTANT_TOKEN."
 			}
 		case "r":
 			if m.stateAPI != nil {
@@ -683,6 +860,9 @@ func (m statusModel) View() string {
 	if m.prompt != "" {
 		return RenderPrompt(m)
 	}
+	if m.planner {
+		return m.renderLighting()
+	}
 	if m.lightLoading {
 		width, height := m.width, m.height
 		if width < 1 {
@@ -691,7 +871,7 @@ func (m statusModel) View() string {
 		if height < 1 {
 			height = 24
 		}
-		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, titleStyle.Render("Loading Home Assistant light entities…\n\nEsc cancel  Ctrl+C quit"))
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, titleStyle.Render(m.loadingSpinner.View()+" Loading Home Assistant light entities…\n\nESC cancel  Ctrl+C quit"))
 	}
 	if m.bootstrapLoading {
 		width, height := m.width, m.height
@@ -701,7 +881,7 @@ func (m statusModel) View() string {
 		if height < 1 {
 			height = 24
 		}
-		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, titleStyle.Render("Reading Home Assistant infrastructure…\n\nPlease wait. Ctrl+C quits."))
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, titleStyle.Render(m.loadingSpinner.View()+" Reading Home Assistant infrastructure…\n\nPlease wait. Ctrl+C quits."))
 	}
 	if m.helpView {
 		return renderHelp(m.width, m.height)
@@ -714,10 +894,10 @@ func (m statusModel) View() string {
 		if err != nil {
 			return "Diff error: " + err.Error() + "\n"
 		}
-		return m.renderScrollable("Draft diff", FormatChanges(changes), m.diffScroll, "d/Esc back  j/k scroll  q quit")
+		return m.renderScrollable("Draft diff", FormatChanges(changes), m.diffScroll, "d/ESC back  j/k scroll  q quit")
 	}
 	if m.simulate {
-		return m.renderScrollable("Simulation: "+m.selectedScene(), RenderSimulation(m.bundle, m.selectedScene()), m.simulationScroll, "v/Esc back  j/k scroll  q quit")
+		return m.renderScrollable("Simulation: "+m.selectedScene(), RenderSimulation(m.bundle, m.selectedScene()), m.simulationScroll, "v/ESC back  j/k scroll  q quit")
 	}
 	if m.inventory {
 		return m.renderInventoryScreen()
@@ -736,21 +916,23 @@ func renderHelp(width, height int) string {
 		sectionStyle.Render("Dashboard") + "\n" +
 		"  Tab           focus workspace navigation / active pane\n" +
 		"  j/k           navigate the focused list\n" +
-		"  1/2/3/4       Scenes / Sequences / Colors / YAML Draft\n" +
+		"  1/2/3/4/5     Scenes / Sequences / Schedules / Colors / YAML\n" +
 		"  Enter         open or edit the selected entry\n" +
-		"  n             create a scene\n" +
-		"  c             color catalog   h holiday sequences\n" +
-		"  t             create a schedule\n" +
-		"  x             delete selected scene\n" +
-		"  v             simulation   p preview   u publish   b sync HA infra\n" +
-		"  s             save draft    d diff\n\n" +
+		"  n             create an entry in the active workspace\n" +
+		"  x             delete selected entry\n" +
+		"  v             simulation (draft-only)\n" +
+		"  p             preview selected scene on live lights\n" +
+		"  u             publish to Home Assistant\n" +
+		"  b             sync HA infrastructure\n" +
+		"  s             save draft\n" +
+		"  d             show file changes in unified diff format\n\n" +
 		sectionStyle.Render("Editors") + "\n" +
 		"  Tab/↑↓        move between fields\n" +
 		"  Enter         enter/accept selectors; save final field\n" +
 		"  p             open the CIE xy color picker from a color form\n" +
 		"  Space         toggle a light in the target selector\n" +
-		"  Esc           cancel or go back\n\n" +
-		mutedStyle.Render("Draft-only changes are marked *unsaved.  Press ? or Esc to return.")
+		"  ESC           cancel or go back\n\n" +
+		mutedStyle.Render("Draft-only changes are marked *unsaved.  Press ? or ESC to return.")
 	if width < 1 {
 		width = 80
 	}
@@ -784,39 +966,33 @@ func (m statusModel) renderDashboard() string {
 	if width < 60 {
 		width = 80
 	}
-	leftWidth := width / 3
-	if leftWidth < 30 {
-		leftWidth = 30
-	}
-	rightWidth := width - leftWidth - 3
-	if rightWidth < 28 {
-		rightWidth = 28
-	}
-
-	var left strings.Builder
-	leftTitle := "WORKSPACES"
-	if m.dashboardFocus == 0 {
-		leftTitle = "❯ WORKSPACES"
-	}
-	left.WriteString(sectionStyle.Render(leftTitle) + "\n\n")
 	workspaces := []struct {
 		label string
 		count int
 	}{
 		{"Scenes", len(SceneIDs(m.bundle))},
-		{"Sequences", len(sequenceHolidays(m.bundle))},
+		{"Sequences", len(colorSequences(m.bundle))},
+		{"Schedules", len(lightingAssignments(m.bundle))},
 		{"Colors", len(colorIDs(m.bundle))},
 		{"YAML Draft", len(m.bundle.Kinds())},
 	}
+	var tabs strings.Builder
 	for i, workspace := range workspaces {
-		line := fmt.Sprintf("  %d  %-10s (%d)", i+1, workspace.label, workspace.count)
-		if m.dashboardWorkspace == i {
-			line = selectedStyle.Render(fmt.Sprintf("❯ %d  %-10s (%d)", i+1, workspace.label, workspace.count))
+		line := fmt.Sprintf("%d %s", i+1, workspace.label)
+		if m.dashboardWorkspace == workspaceOrder[i] {
+			if m.dashboardFocus == 0 {
+				line = selectedStyle.Render("[" + line + "]")
+			} else {
+				line = valueStyle.Render(" " + line + " ")
+			}
 		}
-		left.WriteString(line + "\n")
+		tabs.WriteString(line)
+		if i < len(workspaces)-1 {
+			tabs.WriteString("   ")
+		}
 	}
-	var right strings.Builder
-	right.WriteString(m.renderDashboardWorkspace(rightWidth))
+	workspaceBar := sectionStyle.Render("WORKSPACES") + "  " + tabs.String()
+	content := m.renderDashboardWorkspace(width)
 
 	draftLabel := "draft: " + m.draftDir
 	if m.dirty {
@@ -824,51 +1000,57 @@ func (m statusModel) renderDashboard() string {
 	}
 	header := titleStyle.Render("Holiday Lighting Designer") + "  " + mutedStyle.Render(draftLabel)
 	rule := borderStyle.Render(strings.Repeat("─", width))
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(leftWidth).PaddingRight(2).Render(left.String()),
-		borderStyle.Render("│ "),
-		lipgloss.NewStyle().Width(rightWidth).Render(right.String()),
-	)
-	footer := footerStyle.Render("Tab focus  ←/→ workspace  1/2/3/4 jump  Enter open/edit  ? help  q quit\n" +
-		"n new  x del  c colors  h seq  b sync infra  v sim  p prev  i inv  s save  d diff  u pub")
+	body := lipgloss.NewStyle().Width(width).Render(content)
+	footer := footerStyle.Render("Tab focus  ←/→ workspace  1–5 jump  ? help  q quit\n" +
+		"n new  i lights  s save  d diff  u publish to Home Assistant")
 	footer += "\n" + dashboardHelpView(width)
-	return header + "\n" + rule + "\n" + body + "\n" + rule + "\n" + footer + "\n"
+	return header + "\n" + rule + "\n" + workspaceBar + "\n" + rule + "\n" + body + "\n" + rule + "\n" + footer + "\n"
 }
 
 func (m statusModel) renderDashboardWorkspace(width int) string {
 	var result strings.Builder
 	switch m.dashboardWorkspace {
+	case 4:
+		result.WriteString(sectionStyle.Render("SCHEDULES") + "\n\n")
+		ids := lightingIDs(m.bundle, 1)
+		if len(ids) == 0 {
+			result.WriteString(mutedStyle.Render("No schedules defined.") + "\n")
+		}
+		for i, id := range ids {
+			a := lightingAssignments(m.bundle)[id]
+			prefix := "  "
+			if i == m.scheduleSelected {
+				prefix = "❯ "
+			}
+			fmt.Fprintf(&result, "%s%s · %s → %s\n", prefix, a.Name, a.Start, a.End)
+		}
+		result.WriteString("\nChoose a sequence, lights, dates and daily hours.\nThe same sequence can have several schedules.\n")
+		return result.String()
 	case 1:
-		holidays := sequenceHolidays(m.bundle)
-		result.WriteString(sectionStyle.Render("SEQUENCES") + "\n")
-		result.WriteString(mutedStyle.Render("Ordered scene cycles; duplicates and order are significant.") + "\n\n")
-		for i, holiday := range holidays {
-			values := holidaySequences(m.bundle)[holiday]
-			line := fmt.Sprintf("  %-24s %d steps", holiday, len(values))
-			if i == m.sequenceHoliday && m.dashboardFocus == 1 {
-				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
+		result.WriteString(sectionStyle.Render("COLOR SEQUENCES") + "\n\n")
+		ids := lightingIDs(m.bundle, 0)
+		if len(ids) == 0 {
+			result.WriteString(mutedStyle.Render("No color sequences defined.") + "\n")
+		}
+		for i, id := range ids {
+			s := colorSequences(m.bundle)[id]
+			prefix := "  "
+			if i == m.sequenceHoliday {
+				prefix = "❯ "
 			}
-			result.WriteString(line + "\n")
+			fmt.Fprintf(&result, "%s%s · %d steps\n", prefix, s.Name, len(s.Steps))
 		}
-		if len(holidays) == 0 {
-			result.WriteString(mutedStyle.Render("  No sequences. Press n to create one or b to sync HA infrastructure.") + "\n")
-		}
-		if len(holidays) > 0 && m.sequenceHoliday < len(holidays) {
-			selected := holidays[m.sequenceHoliday]
-			result.WriteString("\n" + sectionStyle.Render("SELECTED SEQUENCE") + "  " + valueStyle.Render(selected) + "\n")
-			for i, sceneID := range holidaySequences(m.bundle)[selected] {
-				result.WriteString(fmt.Sprintf("  %d. %s\n", i+1, sequenceSceneName(m.bundle, sceneID)))
-			}
-		}
+		return result.String()
 	case 2:
 		ids := colorIDs(m.bundle)
 		result.WriteString(sectionStyle.Render("COLORS") + "\n")
 		result.WriteString(mutedStyle.Render("Named CIE xy colors reusable by scenes.") + "\n\n")
 		for i, id := range ids {
 			color := colorDefinitions(m.bundle)[id]
-			line := renderCatalogColor(color)
+			line := "  " + strings.TrimPrefix(renderCatalogColor(color), "Color: ")
 			if i == m.colorSelected && m.dashboardFocus == 1 {
-				line = selectedStyle.Render("❯ " + line)
+				line = strings.Replace(line, color.Name, selectedStyle.Render(color.Name), 1)
+				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
 			}
 			result.WriteString(line + "\n")
 		}
@@ -879,8 +1061,14 @@ func (m statusModel) renderDashboardWorkspace(width int) string {
 		kinds := m.bundle.Kinds()
 		result.WriteString(sectionStyle.Render("YAML DRAFT") + "\n")
 		result.WriteString(mutedStyle.Render("Proposed native Home Assistant YAML; select a file and press Enter to inspect it.") + "\n\n")
+		nameWidth := 0
+		for _, kind := range kinds {
+			if name := len(filenameForKind(kind)); name > nameWidth {
+				nameWidth = name
+			}
+		}
 		for i, kind := range kinds {
-			line := fmt.Sprintf("  %-14s %d entries", filenameForKind(kind), draftEntryCount(m.bundle.Files[kind].Data))
+			line := fmt.Sprintf("  %-*s  %-4d entries", nameWidth, filenameForKind(kind), draftEntryCount(m.bundle.Files[kind].Data))
 			if i == m.contentKind && m.dashboardFocus == 1 {
 				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
 			}
@@ -891,26 +1079,42 @@ func (m statusModel) renderDashboardWorkspace(width int) string {
 		}
 	default:
 		ids := SceneIDs(m.bundle)
-		result.WriteString(sectionStyle.Render("SCENES") + "\n")
-		result.WriteString(mutedStyle.Render("Groups of lights with reusable color assignments.") + "\n\n")
+		left, right := strings.Builder{}, strings.Builder{}
+		left.WriteString(sectionStyle.Render("SCENES") + "\n")
+		left.WriteString(mutedStyle.Render("Groups of lights with reusable color assignments.") + "\n\n")
 		for i, id := range ids {
 			line := "  " + sequenceSceneName(m.bundle, id)
 			if i == m.selected && m.dashboardFocus == 1 {
 				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
 			}
-			result.WriteString(line + "\n")
+			left.WriteString(line + "\n")
 		}
 		if len(ids) == 0 {
-			result.WriteString(mutedStyle.Render("  No scenes. Press n to create one.") + "\n")
+			left.WriteString(mutedStyle.Render("  No scenes. Press n to create one.") + "\n")
 		}
 		id := m.selectedScene()
 		if id != "" {
-			result.WriteString("\n" + sectionStyle.Render("SCENE DETAILS") + "  " + titleStyle.Render(id) + "\n\n")
+			right.WriteString(sectionStyle.Render("SCENE DETAILS") + "  " + titleStyle.Render(id) + "\n\n")
 			for _, entityID := range mapKeys(SceneValues(m.bundle, id)) {
 				value := SceneValues(m.bundle, id)[entityID]
-				fmt.Fprintf(&result, "  %s\n    State: %v    Brightness: %s\n    %s\n", entityID, value["state"], formatBrightness(value["brightness"]), renderSceneColor(value))
+				fmt.Fprintf(&right, "  %s\n    State: %v    Brightness: %s\n    %s\n", entityID, value["state"], formatBrightness(value["brightness"]), renderSceneColor(value))
 			}
+		} else {
+			right.WriteString(mutedStyle.Render("Select a scene to view its details.") + "\n")
 		}
+		leftWidth := width / 3
+		if leftWidth < 28 {
+			leftWidth = 28
+		}
+		rightWidth := width - leftWidth - 3
+		if rightWidth < 28 {
+			rightWidth = 28
+		}
+		return lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Width(leftWidth).PaddingRight(2).Render(left.String()),
+			borderStyle.Render("│ "),
+			lipgloss.NewStyle().Width(rightWidth).Render(right.String()),
+		)
 	}
 	return result.String()
 }
@@ -918,7 +1122,7 @@ func (m statusModel) renderDashboardWorkspace(width int) string {
 func (m statusModel) renderContentScreen() string {
 	kinds := m.bundle.Kinds()
 	if len(kinds) == 0 {
-		return "No draft content.\n\nEsc back\n"
+		return "No draft content.\n\nESC back\n"
 	}
 	contentKind := m.contentKind
 	if contentKind < 0 {
@@ -930,7 +1134,7 @@ func (m statusModel) renderContentScreen() string {
 	kind := kinds[contentKind]
 	data, err := yaml.Marshal(m.bundle.Files[kind].Data)
 	if err != nil {
-		return "Cannot render draft content: " + err.Error() + "\n\nEsc back\n"
+		return "Cannot render draft content: " + err.Error() + "\n\nESC back\n"
 	}
 	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 	visible := m.height - 7
@@ -954,7 +1158,7 @@ func (m statusModel) renderContentScreen() string {
 	for _, line := range lines[start:end] {
 		body.WriteString(line + "\n")
 	}
-	body.WriteString("\n" + footerStyle.Render("j/k scroll  Tab/h/l change file  Esc back  q quit") + "\n")
+	body.WriteString("\n" + footerStyle.Render("j/k scroll  Tab/h/l change file  ESC back  q quit") + "\n")
 	return body.String()
 }
 
@@ -993,7 +1197,7 @@ func renderCatalogColor(color ColorDefinition) string {
 		foreground = "0"
 	}
 	swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(foreground)).Background(lipgloss.Color(hex)).Padding(0, 1).Render(" " + hex + " ")
-	return "Color: " + swatch + "  " + valueStyle.Render(color.Name) + fmt.Sprintf(" (XY %.3f, %.3f)", color.X, color.Y)
+	return "Color: " + swatch + "  " + color.Name + fmt.Sprintf(" (XY %.3f, %.3f)", color.X, color.Y)
 }
 
 func sceneDisplayRGB(value map[string]any) ([3]int, string, bool) {
@@ -1083,14 +1287,14 @@ func RenderStatus(bundle Bundle) string {
 	}
 	result.WriteString("\nCommands: Tab focus | Enter open/edit | q quit\n")
 	result.WriteString("Scenes: n new | Enter/e edit | x delete | v simulate | p preview | i inventory | j/k select | s save\n")
-	result.WriteString("Publish: u publish draft\n")
+	result.WriteString("Publish: u publish to Home Assistant\n")
 	result.WriteString("Schedule: t new schedule\n")
 	return result.String()
 }
 
 func (m *statusModel) showInventory() {
 	if m.stateAPI == nil {
-		m.message = "Inventory unavailable: configure HA URL and token."
+		m.message = "Inventory unavailable: set HOMEASSISTANT_URL and HOMEASSISTANT_TOKEN."
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1164,6 +1368,21 @@ func runBootstrapCmd(store interface {
 	}
 }
 
+func runUpgradeCmd(store interface {
+	ReadAll(context.Context) (Bundle, error)
+}, current Bundle) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		source, err := store.ReadAll(ctx)
+		if err != nil {
+			return upgradeResultMsg{err: err}
+		}
+		bundle, err := upgradeLegacyInfrastructure(current, source)
+		return upgradeResultMsg{bundle: bundle, err: err}
+	}
+}
+
 func (m *statusModel) refreshLightIDs() bool {
 	if len(m.lightIDs) > 0 {
 		return true
@@ -1232,7 +1451,7 @@ func (m statusModel) renderInventoryScreen() string {
 	if width < 60 {
 		width = 80
 	}
-	leftWidth := width / 3
+	leftWidth := width / 2
 	if leftWidth < 28 {
 		leftWidth = 28
 	}
@@ -1255,7 +1474,7 @@ func (m statusModel) renderInventoryScreen() string {
 			break
 		}
 	}
-	visible := m.height - 10
+	visible := m.height - 12
 	if visible < 1 {
 		visible = 16
 	}
@@ -1300,11 +1519,11 @@ func (m statusModel) renderInventoryScreen() string {
 			lines = append(lines, marker+" "+sectionStyle.Render(section.title)+" ["+map[bool]string{true: "+", false: "-"}[collapsed]+"]")
 			if !collapsed {
 				for _, line := range section.lines {
-					lines = append(lines, "  "+line)
+					lines = append(lines, "    "+line)
 				}
 			}
 		}
-		maxLines := m.height - 10
+		maxLines := m.height - 12
 		if maxLines < 1 {
 			maxLines = len(lines)
 		}
@@ -1333,7 +1552,7 @@ func (m statusModel) renderInventoryScreen() string {
 		borderStyle.Render("│ "),
 		lipgloss.NewStyle().Width(rightWidth).Render(right.String()),
 	)
-	footer := footerStyle.Render("Tab focus  j/k move/scroll  / section  Space collapse  i/Esc back  q quit")
+	footer := footerStyle.Render("Tab focus  ↑/↓ section/list  j/k scroll  ←/→ pane  Space collapse  i/ESC back  q quit")
 	return titleStyle.Render("Home Assistant Light Inventory") + "\n" + mutedStyle.Render("Inspect each light's capabilities for scene design") + "\n" + rule + "\n" + body + "\n" + rule + "\n" + footer + "\n"
 }
 
@@ -1528,12 +1747,42 @@ func (m statusModel) updatePrompt(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.prompt, m.input, m.pending, m.deleteID, m.deleteRefs = "", "", "", "", nil
 			return m, nil
 		}
+		deleteColorPrompt := m.prompt == "delete-color"
 		m.prompt, m.input = "", ""
+		if deleteColorPrompt {
+			m.pending = ""
+		}
 	case "backspace":
 		if len(m.input) > 0 {
 			m.input = m.input[:len(m.input)-1]
 		}
 	case "enter":
+		if m.prompt == "delete-color" {
+			next, err := deleteColor(m.bundle, m.pending)
+			if err != nil {
+				m.message = "Color delete failed: " + err.Error()
+			} else {
+				m.bundle, m.dirty, m.message = next, true, "Deleted color "+m.pending+"."
+				if m.colorSelected >= len(colorIDs(next)) && m.colorSelected > 0 {
+					m.colorSelected--
+				}
+			}
+			m.prompt, m.pending, m.input = "", "", ""
+			return m, nil
+		}
+		if m.prompt == "upgrade-legacy" && m.input == "UPGRADE" {
+			if store, ok := m.store.(interface {
+				ReadAll(context.Context) (Bundle, error)
+			}); ok {
+				baseline := m.bundle
+				m.baseline = &baseline
+				m.prompt, m.input, m.bootstrapLoading = "", "", true
+				return m, runUpgradeCmd(store, m.bundle)
+			}
+			m.message = "Upgrade requires the configured Home Assistant connection."
+			m.prompt, m.input = "", ""
+			return m, nil
+		}
 		if m.prompt == "preview" && m.input == "PREVIEW" {
 			m.operationLoading = true
 			return m, runPreviewCmd(m.preview, m.bundle, m.selectedScene())
@@ -1824,6 +2073,9 @@ func (m *statusModel) finishPrompt() {
 		}
 		return
 	}
+	if m.prompt == "upgrade-legacy" {
+		return
+	}
 	if m.prompt == "new" || m.prompt == "edit" {
 		m.finishSceneForm()
 		return
@@ -2042,7 +2294,7 @@ func (m *statusModel) finishScheduleForm() {
 }
 
 func (m statusModel) updateColorForm(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.String() == "p" {
+	if key.String() == "p" && m.formField > 0 {
 		m.ciePicker = true
 		m.ciePickerX, m.ciePickerY = 0.5, 0.333
 		if len(m.formValues) > 2 {
@@ -2371,20 +2623,35 @@ func RenderPrompt(m statusModel) string {
 	if m.prompt == "delete-modal" {
 		return m.renderDeleteModal()
 	}
+	if m.prompt == "delete-color" {
+		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 3).Render(
+			titleStyle.Render("Delete color") + "\n\nDelete " + valueStyle.Render(m.pending) + " from the draft?\n\nEnter confirm  ESC cancel")
+		width, height := m.width, m.height
+		if width < 1 {
+			width = 80
+		}
+		if height < 1 {
+			height = 24
+		}
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+	}
 	if m.prompt == "quit-confirm" {
-		return message + "Unsaved draft changes will be lost. Quit? [y/N]\n> " + m.input + "\n\nEnter confirm | Esc cancel\n"
+		return m.renderQuitModal()
+	}
+	if m.prompt == "upgrade-legacy" {
+		return m.renderUpgradeModal()
 	}
 	if m.prompt == "schedule" {
 		return message + RenderScheduleForm(m)
 	}
 	if m.prompt == "sequence-new" {
-		return message + titleStyle.Render("New holiday sequence") + "\n\nEnter the holiday/selector name.\n> " + m.input + "▏\n\nEnter save  Esc cancel\n"
+		return message + titleStyle.Render("New holiday sequence") + "\n\nEnter the holiday/selector name.\n> " + m.input + "▏\n\nEnter save  ESC cancel\n"
 	}
 	if m.prompt == "preview" {
 		if m.operationLoading {
 			return "Applying preview to real lights…\n\nPlease wait. Ctrl+C quits.\n"
 		}
-		return message + previewConfirmation(m.bundle, m.selectedScene(), m.inventoryStates) + "\nType PREVIEW to apply the selected scene to real lights\n> " + m.input + "\n\nEnter confirm | Esc cancel\n"
+		return message + previewConfirmation(m.bundle, m.selectedScene(), m.inventoryStates) + "\nType PREVIEW to apply the selected scene to real lights\n> " + m.input + "\n\nEnter confirm | ESC cancel\n"
 	}
 	if m.prompt == "restore" {
 		return "Restoring captured light state…\n\nPlease wait.\n"
@@ -2399,12 +2666,44 @@ func RenderPrompt(m statusModel) string {
 				diff = "\n" + FormatChanges(changes)
 			}
 		}
-		return message + diff + "\nType PUBLISH to publish the draft to Home Assistant\n> " + m.input + "\n\nEnter confirm | Esc cancel\n"
+		return message + diff + "\nType PUBLISH to publish the draft to Home Assistant\n> " + m.input + "\n\nEnter confirm | ESC cancel\n"
 	}
 	if m.prompt == "delete-ha" {
 		return m.renderDeleteHAModal()
 	}
-	return message + m.prompt + "\n> " + m.input + "\n\nEnter confirm | Esc cancel\n"
+	return message + m.prompt + "\n> " + m.input + "\n\nEnter confirm | ESC cancel\n"
+}
+
+func (m statusModel) renderUpgradeModal() string {
+	modal := titleStyle.Render("Upgrade legacy lighting setup") + "\n\n" +
+		"The old holiday_lights model was detected.\n\n" +
+		"This keeps the original script as holiday_lights_legacy_backup, preserves existing scenes, selector options, and automations, and stages the new sequence and scheduling infrastructure.\n\n" +
+		"Type UPGRADE to stage it, then press d to review the diff before publishing.\n> " + m.input + "\n\nEnter confirm  ESC cancel"
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 3).Render(modal)
+	width, height := m.width, m.height
+	if width < 1 {
+		width = 80
+	}
+	if height < 1 {
+		height = 24
+	}
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func (m statusModel) renderQuitModal() string {
+	modal := titleStyle.Render("Quit with unsaved changes") + "\n\n" +
+		"Unsaved draft changes will be lost. Quit?\n\n" +
+		"> " + m.input + "\n\n" +
+		"y quit  n keep editing"
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 3).Render(modal)
+	width, height := m.width, m.height
+	if width < 1 {
+		width = 80
+	}
+	if height < 1 {
+		height = 24
+	}
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func RenderScheduleForm(m statusModel) string {
@@ -2630,7 +2929,7 @@ func (m statusModel) renderDeleteModal() string {
 		modal.WriteString("Cannot inspect Home Assistant references:\n")
 		modal.WriteString(mutedStyle.Render("  "+m.deleteInspectionErr) + "\n\n")
 		modal.WriteString("Deletion is disabled until HA can be inspected.\n")
-		modal.WriteString("\nEsc cancel\n")
+		modal.WriteString("\nESC cancel\n")
 	} else {
 		modal.WriteString("Delete " + valueStyle.Render(m.deleteID) + " from the draft?\n\n")
 		if len(m.deleteRefs) == 0 {
@@ -2659,7 +2958,7 @@ func (m statusModel) renderDeleteModal() string {
 				modal.WriteString(mutedStyle.Render(fmt.Sprintf("  showing %d-%d of %d", start+1, end, len(m.deleteRefs))) + "\n")
 			}
 		}
-		modal.WriteString("\nEnter/y confirm  Esc/n cancel\n")
+		modal.WriteString("\nEnter/y confirm  ESC/n cancel\n")
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 3).Render(modal.String())
 	width, height := m.width, m.height
@@ -2669,17 +2968,7 @@ func (m statusModel) renderDeleteModal() string {
 	if height < 1 {
 		height = 24
 	}
-	background := m.renderDashboard()
-	boxWidth, boxHeight := lipgloss.Width(box), lipgloss.Height(box)
-	left := (width-boxWidth)/2 + 1
-	top := (height-boxHeight)/2 + 1
-	if left < 1 {
-		left = 1
-	}
-	if top < 1 {
-		top = 1
-	}
-	return background + fmt.Sprintf("\x1b[%d;%dH%s\x1b[%d;1H", top, left, box, height)
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m statusModel) renderDeleteHAModal() string {

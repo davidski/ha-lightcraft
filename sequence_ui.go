@@ -126,7 +126,7 @@ func (m statusModel) renderSequenceScreen() string {
 	}
 	if len(holidays) == 0 {
 		result.WriteString(mutedStyle.Render("No sequences defined. Press b on the dashboard to install managed holiday infrastructure.") + "\n")
-		return result.String() + "\n" + footerStyle.Render("Esc/h back  q quit") + "\n"
+		return result.String() + "\n" + footerStyle.Render("ESC/h back  q quit") + "\n"
 	}
 	if m.sequenceHoliday >= len(holidays) {
 		m.sequenceHoliday = len(holidays) - 1
@@ -153,7 +153,7 @@ func (m statusModel) renderSequenceScreen() string {
 			result.WriteString(line + "\n")
 		}
 	}
-	result.WriteString("\n" + footerStyle.Render("←/→ holiday  j/k entry  [/] move  Esc/h back  q quit\n"+"a add  x remove  n new") + "\n")
+	result.WriteString("\n" + footerStyle.Render("←/→ holiday  j/k entry  [/] move  ESC back  q quit\n"+"a add  x remove  n new") + "\n")
 	return result.String()
 }
 
@@ -176,7 +176,7 @@ func (m statusModel) renderSequenceAddScreen(holidays []string) string {
 			result.WriteString(line + "\n")
 		}
 	}
-	result.WriteString("\n" + footerStyle.Render("j/k select  Enter add  Esc cancel") + "\n")
+	result.WriteString("\n" + footerStyle.Render("j/k select  Enter add  ESC cancel") + "\n")
 	return result.String()
 }
 

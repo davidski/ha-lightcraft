@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
 
+	udiff "github.com/aymanbagabas/go-udiff"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,7 +58,8 @@ func FormatChanges(changes []Change) string {
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Kind < changes[j].Kind })
 	result := ""
 	for _, change := range changes {
-		result += fmt.Sprintf("[%s]\n-\n%s+\n%s", change.Kind, indentYAML(change.Old), indentYAML(change.New))
+		oldYAML, newYAML := indentYAML(change.Old), indentYAML(change.New)
+		result += udiff.Unified(string(change.Kind), string(change.Kind), oldYAML, newYAML)
 	}
 	return result
 }

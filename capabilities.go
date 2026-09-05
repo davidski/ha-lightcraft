@@ -16,7 +16,7 @@ func (c LightCapability) Validate(value map[string]any) error {
 	if brightness, ok := value["brightness"].(int); ok && (brightness < 0 || brightness > 255) {
 		return fmt.Errorf("%s brightness must be 0-255", c.EntityID)
 	}
-	if _, ok := value["rgb_color"]; ok && len(c.SupportedColorMode) > 0 && !supports(c.SupportedColorMode, "rgb", "rgbw", "hs") {
+	if _, ok := value["rgb_color"]; ok && len(c.SupportedColorMode) > 0 && !supports(c.SupportedColorMode, "rgb", "rgbw", "rgbww", "hs", "xy") {
 		return fmt.Errorf("%s does not support RGB color", c.EntityID)
 	}
 	if _, ok := value["color_temp_kelvin"]; ok && len(c.SupportedColorMode) > 0 && !supports(c.SupportedColorMode, "color_temp") {

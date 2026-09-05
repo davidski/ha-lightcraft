@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -80,9 +81,6 @@ func main() {
 		if existing, err := LoadBundle(*draft); err == nil {
 			if colors, ok := existing.Files[Colors]; ok {
 				bundle.Files[Colors] = colors
-			}
-			if scripts, ok := existing.Files[Scripts]; ok {
-				bundle.Files[Scripts] = scripts
 			}
 		}
 		bundle = mergeImportedColors(bundle)
@@ -178,6 +176,10 @@ func main() {
 		os.Exit(1)
 	}
 	var baselineBundle *Bundle
+	if err := validateLighting(bundle); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	if *against != "" {
 		value, err := LoadBundle(*against)
 		if err != nil {
@@ -201,7 +203,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	model := statusModel{bundle: bundle, draftDir: *draft, baseline: baselineBundle, refs: refs, deletes: deletes, backup: *backupRoot}
+	model := statusModel{bundle: bundle, draftDir: *draft, baseline: baselineBundle, refs: refs, deletes: deletes, backup: *backupRoot, dashboardWorkspace: 0, dashboardFocus: 1}
+	model.loadingSpinner = spinner.New()
 	if (*sshHost != "" || *haConfigDir != "") && *haURL != "" && os.Getenv(*tokenEnv) != "" {
 		store, storeErr := nativeStore(*sshHost, *sshUser, *haConfigDir, *haURL, os.Getenv(*tokenEnv), filePaths)
 		if storeErr != nil {
