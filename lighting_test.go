@@ -25,16 +25,6 @@ func testLightingAssignment() LightingAssignment {
 	return LightingAssignment{ID: "exterior", Name: "Exterior", Sequence: "christmas", Targets: []string{"light.accent_one", "light.accent_two", "light.accent_three", "light.front_door"}, Start: "12-01", End: "12-31", On: "sunset", Off: "00:00", Finish: "off", Enabled: true}
 }
 
-func TestLightingImportIncludesLegacyScript(t *testing.T) {
-	bundle := Bundle{Files: map[ConfigKind]Config{Scripts: {Kind: Scripts, Data: map[string]any{
-		holidayScriptID: map[string]any{"sequence": []any{}},
-	}}}}
-	refs := lightingImportRefs(bundle, nil)
-	if len(refs) != 1 || refs[0] != (ConfigRef{Kind: Scripts, ID: holidayScriptID}) {
-		t.Fatalf("legacy script was not auto-imported: %#v", refs)
-	}
-}
-
 func testLightingBundle(t *testing.T) Bundle {
 	t.Helper()
 	b, err := saveColorSequence(Bundle{}, testColorSequence())

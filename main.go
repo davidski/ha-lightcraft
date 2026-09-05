@@ -17,8 +17,8 @@ func main() {
 	draft := flag.String("draft", ".", "directory containing native HA YAML drafts")
 	against := flag.String("against", "", "baseline draft directory for TUI diff")
 	importRefs := flag.String("import", "", "comma-separated refs, e.g. scenes:halloween_orange,scripts:holiday_lights")
-	importConfigPath := flag.String("import-config", "", "YAML file listing Home Assistant refs to import")
-	configPath := flag.String("config", "", "YAML file containing Home Assistant settings and refs")
+	importConfigPath := flag.String("import-config", "", "YAML file containing Home Assistant import settings")
+	configPath := flag.String("config", "", "YAML file containing Home Assistant settings")
 	publish := flag.Bool("publish", false, "publish draft after diff confirmation")
 	baseline := flag.String("baseline", "", "imported baseline draft used for stale detection")
 	refsValue := flag.String("refs", "", "comma-separated HA refs included in the baseline")
@@ -101,17 +101,9 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
-			if *refsValue == "" {
-				refs, err := configRefs(config)
-				if err != nil {
-					fmt.Fprintln(os.Stderr, err)
-					os.Exit(1)
-				}
-				*refsValue = formatConfigRefs(refs)
-			}
 		}
-		if *baseline == "" || *refsValue == "" {
-			fmt.Fprintln(os.Stderr, "--publish requires --baseline and --refs")
+		if *baseline == "" {
+			fmt.Fprintln(os.Stderr, "--publish requires --baseline")
 			os.Exit(1)
 		}
 		draftBundle, err := LoadBundle(*draft)
@@ -124,10 +116,15 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		refs, err := parseRefs(*refsValue)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		var refs []ConfigRef
+		if *refsValue != "" {
+			refs, err = parseRefs(*refsValue)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		} else {
+			refs = bundleRefs(baseBundle)
 		}
 		deletes, err := parseRefs(*deleteValue)
 		if err != nil {

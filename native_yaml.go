@@ -177,9 +177,10 @@ func (s NativeYAMLStore) Import(ctx context.Context, refs []ConfigRef) (Bundle, 
 	if err != nil {
 		return Bundle{}, err
 	}
-	// The reserved lighting namespace is a complete, HA-owned project. Include
-	// its definitions, players, schedules and helpers on every fresh import.
-	refs = lightingImportRefs(full, refs)
+	if len(refs) == 0 {
+		full.SourceHash = full.Hash
+		return full, nil
+	}
 	selected, err := selectRefs(full, refs)
 	if err != nil {
 		return Bundle{}, err

@@ -47,9 +47,6 @@ func loadConfigRefs(path string) ([]ConfigRef, error) {
 }
 
 func configRefs(config ProjectConfig) ([]ConfigRef, error) {
-	if len(config.Refs) == 0 {
-		return nil, fmt.Errorf("config must contain at least one ref")
-	}
 	var refs []ConfigRef
 	for _, value := range config.Refs {
 		parsed, err := parseRefs(value)

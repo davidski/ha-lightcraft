@@ -22,6 +22,20 @@ func TestNativeYAMLImportSelectsOnlyRequestedEntries(t *testing.T) {
 	}
 }
 
+func TestNativeYAMLImportWithoutRefsSelectsAllEntries(t *testing.T) {
+	dir := t.TempDir()
+	writeNative(t, dir, "scenes.yaml", "- id: first\n  name: First\n  entities: {}\n- id: second\n  name: Second\n  entities: {}\n")
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: dir}, ConfigDir: "."}
+	bundle, err := store.Import(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenes := bundle.Files[Scenes].Data.([]any)
+	if len(scenes) != 2 || scenes[0].(map[string]any)["id"] != "first" || bundle.SourceHash != bundle.Hash {
+		t.Fatalf("bundle = %#v", bundle)
+	}
+}
+
 func TestNativeYAMLPublishPreservesUnrelatedEntries(t *testing.T) {
 	dir := t.TempDir()
 	writeNative(t, dir, "scenes.yaml", "- id: keep\n  name: Old\n  entities: {}\n- id: other\n  name: Preserve\n  entities: {}\n")

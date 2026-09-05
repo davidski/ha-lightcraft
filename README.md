@@ -5,10 +5,8 @@ scripts, and schedules.
 
 ## Drafts
 
-Drafts are created locally by importing the configured Home Assistant entries.
-The `config.yaml` file contains the Home Assistant connection settings and
-controls which `kind:id` refs are
-included; edit it before importing when the project scope changes.
+Drafts are created locally by importing every entry in the designer-owned Home
+Assistant files configured in `config.yaml`.
 
 Run the TUI against an existing draft:
 
@@ -28,8 +26,9 @@ just check
 The `config.yaml` file defines the HA connection and which entries are relevant
 to this project. The `files` section points each kind at its designer-owned
 native HA YAML file. The importer saves only the selected `kind:id` refs in the
-draft. Color definitions are created automatically from imported XY/HS scenes
-and stored only in the local draft's `colors.yaml`.
+draft when an optional ref list is supplied; otherwise it imports every entry.
+Color definitions are created automatically from imported XY/HS scenes and
+stored only in the local draft's `colors.yaml`.
 
 For native YAML-defined HA entries, use the SSH file transport (the REST
 config endpoints are storage-scene APIs and cannot edit YAML scenes):
@@ -74,8 +73,8 @@ TUI controls:
 - `Tab`/`j`/`k`/`Enter`: focus workspace navigation or its active pane, navigate, and open the selected editor. On the dashboard, `←`/`→` or `1`/`2`/`3`/`4` select the Scenes, Sequences, Colors, and YAML Draft workspaces; `Enter` opens the selected entry.
 - `n`/`e`: create or edit a scene; `t`: create a generated date-window automation (`relative` offsets or recurring `fixed` MM-DD dates).
 - `c`: browse, add, and edit reusable XY colors. Press `p` in the color form for the keyboard-driven CIE 1931 `x,y` picker. Scene forms choose a catalog color; the color name is draft-only and is removed before HA publish.
-- `h`: edit ordered holiday sequences. Use `a` to add a scene, `x` to remove one occurrence, `[`/`]` to reorder, and `n` to create a selector sequence. `b` syncs the managed `holiday_lights` script and `input_select.holiday` infrastructure from HA; it is intentionally not a normal import ref.
-- `b` syncs the managed `holiday_lights` script and `input_select.holiday` infrastructure from the live HA YAML. This is an explicit action so ordinary imports remain limited to the refs in `config.yaml`; review its diff before publishing.
+- `h`: edit ordered holiday sequences. Use `a` to add a scene, `x` to remove one occurrence, `[`/`]` to reorder, and `n` to create a selector sequence.
+- `b` syncs the managed `holiday_lights` script and `input_select.holiday` infrastructure from the live HA YAML; review its diff before publishing.
 - `v`: simulate the selected scene in the TUI without touching HA.
 - `i`: read-only inventory of HA lights, color modes, and effect counts.
 - `p`: type `PREVIEW` to apply the selected scene to real lights; `r` restores the captured state.
@@ -83,5 +82,5 @@ TUI controls:
 - `x`: type `DELETE` to remove a scene from the draft, then type `DELETE HA` for the second confirmation to remove it from HA.
 
 For TUI publish and stale detection, start with `--against` pointing at the
-imported baseline. The optional `--refs` list identifies the HA entries that
-were imported; without it, the app derives refs from that baseline.
+imported baseline. The optional `--refs` list overrides the HA entries managed
+by that baseline.

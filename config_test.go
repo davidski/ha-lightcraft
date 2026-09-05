@@ -20,6 +20,17 @@ func TestLoadConfigRefs(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRefsAllowsAllEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("files:\n  scenes:\n    - scenes/holiday_lighting_designer.yaml\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := loadConfigRefs(path)
+	if err != nil || len(refs) != 0 {
+		t.Fatalf("refs = %#v, err = %v", refs, err)
+	}
+}
+
 func TestApplyProjectConfig(t *testing.T) {
 	config := ProjectConfig{HomeAssistant: HomeAssistantConfig{URL: "https://ha.example", SSHHost: "svc-01", ConfigDir: "/config"}}
 	var host, user, dir, url string

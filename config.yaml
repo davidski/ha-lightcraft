@@ -5,7 +5,7 @@ home_assistant:
   ssh_host: svc-01
   config_dir: /mnt/docker/homeassistant/ha_config
 
-# Designer-owned native HA files containing the configured refs.
+# Every entry in these designer-owned native HA files is imported.
 files:
   scenes:
     - scenes/holiday_lighting_designer.yaml
@@ -15,22 +15,3 @@ files:
     - automations/holiday_lighting_designer.yaml
   helpers:
     - input_select/holiday_lighting_designer.yaml
-
-# Refs are the only Home Assistant entries imported into local drafts.
-refs:
-  - scenes:christmas_green
-  - scenes:christmas_white
-  - scenes:christmas_red
-  - scenes:easter_pastel_pink
-  - scenes:easter_pastel_yellow
-  - scenes:easter_pastel_green
-  - scenes:easter_pastel_blue
-  - scenes:easter_pastel_purple
-  - scenes:halloween_orange
-  - scenes:halloween_purple
-  - scenes:american_blue
-  - scenes:american_red
-  - scenes:1666312290455
-  - automations:exterior_lights_activate
-  - automations:1665867675382
-  - helpers:holiday

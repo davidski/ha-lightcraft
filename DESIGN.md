@@ -23,8 +23,8 @@ designer entities, metadata, or runtime dependencies to HA.
   in HA's timezone.
 - Production schedules: HA automations/scripts. The designer generates and
   updates those entries; it does not run schedules itself.
-- Initial import: only explicitly requested scene/script/automation/helper
-  references. This limits blast radius and avoids importing unrelated HA data.
+- Import: every entry in the designer-owned files by default; an explicit ref
+  list may select a subset.
 
 ## Runtime flow
 
@@ -45,7 +45,7 @@ Missing, unknown, or unavailable lights fail safely.
 ## Publish safety
 
 1. Validate the draft at the trust boundary.
-2. Re-import the originally selected HA entries.
+2. Re-import the entries recorded in the baseline.
 3. Refuse publication if the live fingerprint differs from the imported
    baseline. The selected YAML draft carries a local sidecar fingerprint of
    the complete imported HA YAML set, so unrelated file changes also block.

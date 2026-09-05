@@ -45,18 +45,6 @@ type LightingAssignment struct {
 
 var entityName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-func lightingImportRefs(full Bundle, refs []ConfigRef) []ConfigRef {
-	result := append([]ConfigRef(nil), refs...)
-	for ref := range bundleEntries(full) {
-		if (ref.Kind == Scripts && (strings.HasPrefix(ref.ID, sequencePrefix) || ref.ID == holidayScriptID)) || strings.HasPrefix(ref.ID, assignmentPrefix) || (ref.Kind == Automations && ref.ID == lightingControllerID) {
-			if !containsRef(result, ref) {
-				result = append(result, ref)
-			}
-		}
-	}
-	return result
-}
-
 func (s ColorSequence) Validate() error {
 	if !entityName.MatchString(s.ID) || strings.TrimSpace(s.Name) == "" {
 		return fmt.Errorf("sequence needs a name and a lowercase identifier")
