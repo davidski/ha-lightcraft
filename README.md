@@ -26,11 +26,10 @@ just check
 ```
 
 The `config.yaml` file defines the HA connection and which entries are relevant
-to this project. The `files` section points each kind at its native HA YAML
-files. It may list multiple files for a kind; the importer reads them all, then
-saves only the selected `kind:id` refs in the draft. Color definitions are
-created automatically from imported XY/HS scenes and stored only in the local
-draft's `colors.yaml`.
+to this project. The `files` section points each kind at its designer-owned
+native HA YAML file. The importer saves only the selected `kind:id` refs in the
+draft. Color definitions are created automatically from imported XY/HS scenes
+and stored only in the local draft's `colors.yaml`.
 
 For native YAML-defined HA entries, use the SSH file transport (the REST
 config endpoints are storage-scene APIs and cannot edit YAML scenes):

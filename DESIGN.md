@@ -17,6 +17,8 @@ designer entities, metadata, or runtime dependencies to HA.
   transport; local filesystem transport is used for tests.
 - Configuration: native HA YAML drafts (`scenes.yaml`, `scripts.yaml`,
   `automations.yaml`, `input_select.yaml`).
+- HA file ownership: one designer-owned native YAML file per configuration
+  kind; unrelated Home Assistant entries remain in separate files.
 - Dates: fixed or anchor-relative windows; generated automations evaluate time
   in HA's timezone.
 - Production schedules: HA automations/scripts. The designer generates and
