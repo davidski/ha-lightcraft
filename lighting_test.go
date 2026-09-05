@@ -183,13 +183,31 @@ func TestLightingWorkspaceAndControlConfirmation(t *testing.T) {
 	bundle := testLightingBundle(t)
 	api := &controlTestAPI{states: map[string]LightState{"input_select.lighting_assignment_exterior": {State: "running"}}}
 	m := statusModel{bundle: bundle, baseline: &bundle, stateAPI: api, dashboardFocus: 1}
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("3")}, {Type: tea.KeyEnter}} {
-		updated, _ := m.Update(key)
-		m = updated.(statusModel)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	m = updated.(statusModel)
+	dashboard := func() string {
+		original := selectedStyle
+		selectedStyle = selectedStyle.Transform(func(value string) string { return "<selected>" + value + "</selected>" })
+		defer func() { selectedStyle = original }()
+		return m.renderDashboardWorkspace(80)
+	}()
+	if !strings.Contains(dashboard, "<selected>❯ Exterior") {
+		t.Fatalf("focused dashboard schedule is not highlighted: %s", dashboard)
 	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(statusModel)
 	if !m.planner || m.lighting.pane != 1 {
 		t.Fatal("Schedules is not independently reachable")
 	}
+	if m.lighting.form != "assignment" || m.lighting.assignment.ID != "exterior" {
+		t.Fatal("dashboard schedule did not open directly for editing")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(statusModel)
+	if m.planner || m.dashboardWorkspace != 4 {
+		t.Fatal("cancelled dashboard schedule did not return to the dashboard")
+	}
+	m.openLighting(1)
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 	m = updated.(statusModel)
 	if cmd != nil || len(api.calls) != 0 || m.lighting.form != "pause" {
@@ -207,6 +225,94 @@ func TestLightingWorkspaceAndControlConfirmation(t *testing.T) {
 	}
 	if len(api.data) != 1 || api.data[0]["option"] != "paused" {
 		t.Fatalf("wrong control call: %#v", api.calls)
+	}
+}
+
+func TestDashboardSequenceOpensDirectlyAndReturns(t *testing.T) {
+	m := statusModel{bundle: testLightingBundle(t), dashboardFocus: 1, dashboardWorkspace: 1}
+	dashboard := func() string {
+		original := selectedStyle
+		selectedStyle = selectedStyle.Transform(func(value string) string { return "<selected>" + value + "</selected>" })
+		defer func() { selectedStyle = original }()
+		return m.renderDashboardWorkspace(80)
+	}()
+	if !strings.Contains(dashboard, "<selected>❯ Christmas") {
+		t.Fatalf("focused dashboard sequence is not highlighted: %s", dashboard)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(statusModel)
+	if !m.planner || !m.lighting.steps || m.lighting.sequence.ID != "christmas" {
+		t.Fatal("dashboard sequence did not open directly for editing")
+	}
+	view := m.renderLighting()
+	if !strings.Contains(view, "\n❯ 1.") || !strings.Contains(view, "\n  2.") {
+		t.Fatalf("sequence step markers are not aligned: %s", view)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(statusModel)
+	if m.lighting.step != -1 || !strings.Contains(m.renderLighting(), "\n❯ Playback:") {
+		t.Fatal("up from the first color step did not focus Playback")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(statusModel)
+	if m.lighting.sequence.Repeat || colorSequences(m.bundle)["christmas"].Repeat {
+		t.Fatal("Space did not cycle the focused Playback checkbox")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(statusModel)
+	if m.lighting.form != "sequence" || m.lighting.focus != 1 {
+		t.Fatal("focused Playback did not open for editing")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(statusModel)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(statusModel)
+	if m.lighting.step != -2 || !strings.Contains(m.renderLighting(), "\n❯ Name:") {
+		t.Fatal("up from Playback did not focus Name")
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(statusModel)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(statusModel)
+	originalSelectedStyle := selectedStyle
+	selectedStyle = selectedStyle.Transform(func(value string) string { return "<selected>" + value + "</selected>" })
+	defer func() { selectedStyle = originalSelectedStyle }()
+	highlighted := m.renderLighting()
+	if !strings.Contains(highlighted, "<selected>❯ 1.") || strings.Contains(highlighted, "<selected>  2.") {
+		t.Fatalf("focused sequence step is not highlighted exclusively: %s", highlighted)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(statusModel)
+	if m.planner || m.dashboardWorkspace != 1 {
+		t.Fatal("cancelled dashboard sequence did not return to the dashboard")
+	}
+}
+
+func TestDashboardSequenceStepCountsAlign(t *testing.T) {
+	bundle := testLightingBundle(t)
+	sequence := testColorSequence()
+	sequence.ID, sequence.Name = "winter", "Long winter sequence"
+	bundle, _ = saveColorSequence(bundle, sequence)
+	view := (statusModel{bundle: bundle, dashboardWorkspace: 1}).renderDashboardWorkspace(80)
+	positions := []int{}
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "2 steps") {
+			positions = append(positions, strings.Index(line, "2 steps"))
+		}
+	}
+	if len(positions) != 2 || positions[0] != positions[1] {
+		t.Fatalf("sequence step counts are not aligned: %s", view)
+	}
+}
+
+func TestScheduleAtStopOptionsIncludeScenes(t *testing.T) {
+	bundle, err := UpsertScene(testLightingBundle(t), NewXYScene("warm", "Warm", []string{"light.one"}, .4, .4, 180))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := lightingEditor{form: "assignment", focus: 7}
+	if options := e.fieldOptions(bundle); !containsString(options, "scene.warm") {
+		t.Fatalf("At stop options = %v", options)
 	}
 }
 
@@ -294,9 +400,15 @@ func TestLightingEditorFlow(t *testing.T) {
 	m.lighting.focus = 8
 	m.lighting.fields[8].Focus()
 	beforeSchedule := m.lighting.fields[8].Value()
+	updated, _ = m.updateLighting(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(statusModel)
+	if m.lighting.fields[8].Value() == beforeSchedule {
+		t.Fatal("Space did not cycle the schedule checkbox")
+	}
+	cycledSchedule := m.lighting.fields[8].Value()
 	updated, _ = m.updateLighting(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m = updated.(statusModel)
-	if m.lighting.fields[8].Value() != beforeSchedule {
+	if m.lighting.fields[8].Value() != cycledSchedule {
 		t.Fatal("schedule checkbox accepted free text")
 	}
 	for _, size := range [][2]int{{80, 24}, {60, 18}, {100, 30}} {

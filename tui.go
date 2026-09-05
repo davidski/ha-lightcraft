@@ -665,11 +665,21 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.dashboardWorkspace == 3 {
 				m.contentView, m.contentScroll = true, 0
 			} else if m.dashboardWorkspace == 1 {
-				m.openLighting(0)
-				m.lighting.selected = m.sequenceHoliday
+				ids := lightingIDs(m.bundle, 0)
+				if m.sequenceHoliday < len(ids) {
+					m.openLighting(0)
+					m.lighting.selected = m.sequenceHoliday
+					m.lighting.returnDashboard = true
+					m.lighting.sequence, m.lighting.steps = colorSequences(m.bundle)[ids[m.sequenceHoliday]], true
+				}
 			} else if m.dashboardWorkspace == 4 {
-				m.openLighting(1)
-				m.lighting.selected = m.scheduleSelected
+				ids := lightingIDs(m.bundle, 1)
+				if m.scheduleSelected < len(ids) {
+					m.openLighting(1)
+					m.lighting.selected = m.scheduleSelected
+					m.lighting.returnDashboard = true
+					m.editLightingAssignment(ids[m.scheduleSelected])
+				}
 			} else if m.dashboardWorkspace == 2 {
 				ids := colorIDs(m.bundle)
 				if m.colorSelected < len(ids) {
@@ -1024,27 +1034,32 @@ func (m statusModel) renderDashboardWorkspace(width int) string {
 		}
 		for i, id := range ids {
 			a := lightingAssignments(m.bundle)[id]
-			prefix := "  "
-			if i == m.scheduleSelected {
-				prefix = "❯ "
+			line := fmt.Sprintf("  %s · %s → %s", a.Name, a.Start, a.End)
+			if i == m.scheduleSelected && m.dashboardFocus == 1 {
+				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
 			}
-			fmt.Fprintf(&result, "%s%s · %s → %s\n", prefix, a.Name, a.Start, a.End)
+			result.WriteString(line + "\n")
 		}
 		result.WriteString("\nChoose a sequence, lights, dates and daily hours.\nThe same sequence can have several schedules.\n")
 		return result.String()
 	case 1:
 		result.WriteString(sectionStyle.Render("COLOR SEQUENCES") + "\n\n")
+		sequences := colorSequences(m.bundle)
 		ids := lightingIDs(m.bundle, 0)
 		if len(ids) == 0 {
 			result.WriteString(mutedStyle.Render("No color sequences defined.") + "\n")
 		}
+		nameWidth := 0
+		for _, id := range ids {
+			nameWidth = max(nameWidth, len(sequences[id].Name))
+		}
 		for i, id := range ids {
-			s := colorSequences(m.bundle)[id]
-			prefix := "  "
-			if i == m.sequenceHoliday {
-				prefix = "❯ "
+			s := sequences[id]
+			line := fmt.Sprintf("  %-*s  %d steps", nameWidth, s.Name, len(s.Steps))
+			if i == m.sequenceHoliday && m.dashboardFocus == 1 {
+				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
 			}
-			fmt.Fprintf(&result, "%s%s · %d steps\n", prefix, s.Name, len(s.Steps))
+			result.WriteString(line + "\n")
 		}
 		return result.String()
 	case 2:

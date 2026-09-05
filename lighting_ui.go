@@ -13,19 +13,20 @@ import (
 )
 
 type lightingEditor struct {
-	pane       int // sequences or assignments
-	selected   int
-	steps      bool
-	step       int
-	form       string
-	fields     []textinput.Model
-	labels     []string
-	focus      int
-	sequence   ColorSequence
-	assignment LightingAssignment
-	error      string
-	picker     bool
-	pick       int
+	pane            int // sequences or assignments
+	selected        int
+	steps           bool
+	step            int
+	form            string
+	fields          []textinput.Model
+	labels          []string
+	focus           int
+	sequence        ColorSequence
+	assignment      LightingAssignment
+	error           string
+	picker          bool
+	pick            int
+	returnDashboard bool
 }
 
 type lightingControlMsg struct {
@@ -213,6 +214,9 @@ func (m *statusModel) saveLightingForm() {
 		return
 	}
 	m.bundle, m.dirty, m.message = next, true, "Saved to draft. Review the diff and publish to apply in Home Assistant."
+	if e.returnDashboard && e.form == "assignment" {
+		m.planner, e.returnDashboard = false, false
+	}
 	e.form, e.error = "", ""
 }
 
@@ -233,8 +237,8 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key.String() {
-		case "left", "right":
-			options := e.fieldOptions()
+		case "left", "right", " ":
+			options := e.fieldOptions(m.bundle)
 			if len(options) > 0 {
 				index := 0
 				for i, value := range options {
@@ -250,8 +254,12 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "esc":
+			returnDashboard := e.returnDashboard && e.form == "assignment"
 			e.form, e.error = "", ""
 			e.step = min(e.step, max(0, len(e.sequence.Steps)-1))
+			if returnDashboard {
+				m.planner, e.returnDashboard = false, false
+			}
 			return m, nil
 		case "ctrl+s":
 			if e.form == "pause" || e.form == "resume" {
@@ -303,9 +311,13 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if e.steps {
 		switch key.String() {
 		case "esc":
-			e.steps = false
+			if e.returnDashboard {
+				m.planner, e.returnDashboard = false, false
+			} else {
+				e.steps = false
+			}
 		case "up", "k":
-			if e.step > 0 {
+			if e.step > -2 {
 				e.step--
 			}
 		case "down", "j":
@@ -314,11 +326,31 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "a", "n":
 			m.editLightingStep(len(e.sequence.Steps))
+		case " ":
+			if e.step == -1 {
+				s := e.sequence
+				s.Repeat = !s.Repeat
+				if next, err := saveColorSequence(m.bundle, s); err != nil {
+					e.error = err.Error()
+				} else {
+					m.bundle, m.dirty, e.sequence, e.error = next, true, s, ""
+				}
+			}
 		case "enter", "e":
+			if e.step < 0 {
+				focus := e.step + 2
+				m.editLightingSequence(e.sequence.ID)
+				e.fields[0].Blur()
+				e.focus = focus
+				return m, e.fields[focus].Focus()
+			}
 			m.editLightingStep(e.step)
 		case "r":
 			m.editLightingSequence(e.sequence.ID)
 		case "[", "]", "x":
+			if e.step < 0 {
+				return m, nil
+			}
 			s := e.sequence
 			s.Steps = append([]ColorStep(nil), s.Steps...)
 			if key.String() == "x" {
@@ -430,7 +462,7 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (e lightingEditor) fieldOptions() []string {
+func (e lightingEditor) fieldOptions(bundle Bundle) []string {
 	if e.form == "sequence" && e.focus == 1 {
 		return []string{"loop", "once"}
 	}
@@ -438,7 +470,11 @@ func (e lightingEditor) fieldOptions() []string {
 		return []string{"enabled", "disabled"}
 	}
 	if e.form == "assignment" && e.focus == 7 {
-		return []string{"off", "leave"}
+		options := []string{"off", "leave"}
+		for _, id := range SceneIDs(bundle) {
+			options = append(options, "scene."+id)
+		}
+		return options
 	}
 	return nil
 }
@@ -585,9 +621,9 @@ func (m statusModel) renderLighting() string {
 		if e.form == "assignment" {
 			title = "Edit schedule"
 		}
-		footer = "Tab/↑/↓ fields  ←/→ choices  Ctrl+U clear  Ctrl+S save  ESC cancel"
+		footer = "Tab/↑/↓ fields  ←/→/Space choices  Ctrl+U clear  Ctrl+S save  ESC cancel"
 		if e.form == "sequence" {
-			footer = "Tab/↑/↓ fields  ←/→ choose  Ctrl+S save  ESC cancel"
+			footer = "Tab/↑/↓ fields  ←/→/Space choose  Ctrl+S save  ESC cancel"
 		}
 		if e.form == "step" {
 			footer = "Tab/↑/↓ fields  Enter choose catalog color  Ctrl+U clear  Ctrl+S save  ESC cancel"
@@ -707,7 +743,7 @@ func (m statusModel) renderLighting() string {
 					lines = append(lines, line)
 				}
 			}
-			lines = append(lines, fmt.Sprintf("Field %d/%d · Enter advances; final Enter saves", e.focus+1, len(e.fields)))
+			lines = append(lines, "Enter advances; final Enter saves")
 			if e.form == "assignment" {
 				hints := []string{
 					"Enter a descriptive schedule name.",
@@ -738,19 +774,29 @@ func (m statusModel) renderLighting() string {
 		} else {
 			once = "[x] once"
 		}
-		lines = append(lines, "Name: "+e.sequence.Name, "Playback: "+loop+"  "+once, "", sectionStyle.Render("COLOR STEPS"))
+		for i, line := range []string{"  Name: " + e.sequence.Name, "  Playback: " + loop + "  " + once} {
+			if e.step == i-2 {
+				line = selectedStyle.Render("❯ " + strings.TrimPrefix(line, "  "))
+			}
+			lines = append(lines, line)
+		}
+		lines = append(lines, "", sectionStyle.Render("COLOR STEPS"))
 		start, end := listWindow(len(e.sequence.Steps), e.step, height-10)
 		for i := start; i < end; i++ {
 			s := e.sequence.Steps[i]
 			hex := fmt.Sprintf("#%02X%02X%02X", s.RGB[0], s.RGB[1], s.RGB[2])
 			swatch := lipgloss.NewStyle().Background(lipgloss.Color(hex)).Render("  ")
-			line := fmt.Sprintf("%d. %s %s %s · %d/255 · %gs / fade %gs", i+1, swatch, s.Name, hex, s.Brightness, s.Hold, s.Transition)
+			marker := "  "
 			if i == e.step {
-				line = "❯ " + line
+				marker = "❯ "
+			}
+			line := fmt.Sprintf("%s%d. %s %s %s · %d/255 · %gs / fade %gs", marker, i+1, swatch, s.Name, hex, s.Brightness, s.Hold, s.Transition)
+			if i == e.step {
+				line = selectedStyle.Render(line)
 			}
 			lines = append(lines, line)
 		}
-		footer = "↑/↓ step  Enter edit  a add  x remove  [/] move  r rename/mode\nt assign to lights  s save draft  ESC back"
+		footer = "↑/↓ select  Enter edit  Space cycle choice  a add  x remove  [/] move\nt assign to lights  s save draft  ESC back"
 	} else {
 		ids := lightingIDs(m.bundle, e.pane)
 		start, end := listWindow(len(ids), e.selected, height-12)
