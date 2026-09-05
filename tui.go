@@ -1001,12 +1001,15 @@ func (m statusModel) renderDashboard() string {
 	header := titleStyle.Render("Holiday Lighting Designer") + "  " + mutedStyle.Render(draftLabel)
 	rule := borderStyle.Render(strings.Repeat("─", width))
 	body := lipgloss.NewStyle().Width(width).Render(content)
-	footer := footerStyle.Render("Tab focus  ←/→ workspace  1–5 jump  ? help  q quit\n" +
-		"n new  i lights  s save  d diff  u publish to Home Assistant")
+	footerLines := []string{}
 	if legacyLightingDetected(m.bundle) {
-		footer += "\nLegacy setup detected — press b to upgrade"
+		footerLines = append(footerLines, "Legacy setup detected — press b to upgrade")
 	}
-	footer += "\n" + dashboardHelpView(width)
+	footerLines = append(footerLines,
+		"Tab focus • ←/→ workspace • 1–5 jump • j/k navigate • Enter open",
+		"n new • i lights • s save • d diff • u publish • ? help • q quit",
+	)
+	footer := footerStyle.Render(strings.Join(footerLines, "\n"))
 	return header + "\n" + rule + "\n" + workspaceBar + "\n" + rule + "\n" + body + "\n" + rule + "\n" + footer + "\n"
 }
 

@@ -79,8 +79,14 @@ func TestDashboardShowsLegacyUpgradeHint(t *testing.T) {
 	view := m.View()
 	lines := strings.Split(view, "\n")
 	visible := strings.Join(lines[max(0, len(lines)-m.height):], "\n")
-	if !strings.Contains(visible, "Legacy setup detected — press b to upgrade") {
-		t.Fatalf("view = %q", view)
+	for _, want := range []string{
+		"Legacy setup detected — press b to upgrade",
+		"Tab focus • ←/→ workspace • 1–5 jump • j/k navigate • Enter open",
+		"n new • i lights • s save • d diff • u publish • ? help • q quit",
+	} {
+		if !strings.Contains(visible, want) {
+			t.Fatalf("view = %q", view)
+		}
 	}
 }
 
