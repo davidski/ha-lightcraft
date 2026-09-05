@@ -69,6 +69,21 @@ func TestStatusViewShowsMessage(t *testing.T) {
 	}
 }
 
+func TestDashboardShowsLegacyUpgradeHint(t *testing.T) {
+	bundle := Bundle{Files: map[ConfigKind]Config{
+		Scripts: {Kind: Scripts, Data: map[string]any{
+			"holiday_lights": map[string]any{"variables": map[string]any{"holiday_colors": map[string]any{"Halloween": []any{"halloween_orange"}}}},
+		}},
+	}}
+	m := statusModel{bundle: bundle, height: 24}
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	visible := strings.Join(lines[max(0, len(lines)-m.height):], "\n")
+	if !strings.Contains(visible, "Legacy setup detected — press b to upgrade") {
+		t.Fatalf("view = %q", view)
+	}
+}
+
 func TestDraftContentViewShowsWorkingCopy(t *testing.T) {
 	m := statusModel{contentView: true, bundle: Bundle{Files: map[ConfigKind]Config{
 		Scenes: {Kind: Scenes, Data: []any{map[string]any{"id": "halloween", "name": "Halloween"}}},

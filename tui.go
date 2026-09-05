@@ -1003,6 +1003,9 @@ func (m statusModel) renderDashboard() string {
 	body := lipgloss.NewStyle().Width(width).Render(content)
 	footer := footerStyle.Render("Tab focus  ←/→ workspace  1–5 jump  ? help  q quit\n" +
 		"n new  i lights  s save  d diff  u publish to Home Assistant")
+	if legacyLightingDetected(m.bundle) {
+		footer += "\nLegacy setup detected — press b to upgrade"
+	}
 	footer += "\n" + dashboardHelpView(width)
 	return header + "\n" + rule + "\n" + workspaceBar + "\n" + rule + "\n" + body + "\n" + rule + "\n" + footer + "\n"
 }
