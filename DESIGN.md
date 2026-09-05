@@ -11,7 +11,9 @@ designer-only color metadata, which is removed before diffing or publishing.
 ## Decisions
 
 - Language: Go; one small executable, fast startup, simple distribution.
-- UI: Bubble Tea TUI.
+- UI: Bubble Tea TUI plus a server-rendered local web editor. The web command
+  uses Go's standard HTTP and template packages, binds only to loopback, and
+  adds no browser-side framework or production runtime.
 - HA access: direct REST/WebSocket state and validation APIs; native YAML
   publishing uses a separate file transport because YAML-defined HA entries
   are not editable through storage config endpoints. SSH is the production
@@ -31,13 +33,20 @@ designer-only color metadata, which is removed before diffing or publishing.
 ## Runtime flow
 
 ```text
-HA import -> designer YAML draft -> TUI edit/simulate -> native HA projection
-                                                        |
-                                                        v
-                         publish diff -> stale check -> backup -> publish -> verify
-                                                                          |
-                                                                     rollback on error
+HA import -> designer YAML draft -> TUI edit/simulate ----> native HA projection
+                              \----> web edit/save/diff --/
+                                                            |
+                                                            v
+                             publish diff -> stale check -> backup -> publish -> verify
+                                                                              |
+                                                                         rollback on error
 ```
+
+The web editor keeps one in-memory draft behind a mutex. Mutation requests use
+a per-process token and expected bundle hash, so stale browser tabs cannot
+silently overwrite newer changes. Draft files change only through the explicit
+Save action. The web interface does not preview or publish to Home Assistant;
+those safety-sensitive operations remain in the TUI and CLI publish flow.
 
 Preview captures exact available light state over WebSocket, applies a scene
 only after an explicit confirmation, and restores the captured state with a

@@ -14,6 +14,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "web" {
+		if err := runWeb(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	draft := flag.String("draft", ".", "directory containing native HA YAML drafts")
 	against := flag.String("against", "", "baseline draft directory for TUI diff")
 	importRefs := flag.String("import", "", "comma-separated refs, e.g. scenes:halloween_orange,scripts:holiday_lights")

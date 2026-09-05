@@ -23,6 +23,20 @@ just build
 just check
 ```
 
+Launch the local web editor and open it in your browser:
+
+```sh
+just web
+```
+
+The web server listens only on `127.0.0.1:8080`. Use `just web port="18080"`
+to choose another port, or run `go run . web --draft drafts/holiday --config
+config.yaml --port 18080`. Use `--open=false` when the browser should not open
+automatically. The web interface edits Scenes, Sequences, Schedules, and Colors
+in memory, shows the current YAML and diff, and writes the draft files only
+when **Save draft files** is selected. Pass `--against DIR` to compare with an
+imported baseline; without it, the diff is against the draft at server startup.
+
 The `config.yaml` file defines the HA connection and which entries are relevant
 to this project. The `files` section points each kind at its designer-owned
 native HA YAML file. The importer saves only the selected `kind:id` refs in the
