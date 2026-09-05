@@ -131,7 +131,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		changes, err := Diff(baseBundle, materializeNativeBundle(draftBundle))
+		changes, err := PublishDiff(baseBundle, draftBundle)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

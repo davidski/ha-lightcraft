@@ -833,7 +833,7 @@ func (m statusModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "u":
 			if m.store != nil && m.baseline != nil {
-				changes, err := Diff(*m.baseline, materializeNativeBundle(m.bundle))
+				changes, err := PublishDiff(*m.baseline, m.bundle)
 				if err != nil {
 					m.message = "Diff failed: " + err.Error()
 				} else if len(changes) == 0 {
@@ -890,11 +890,11 @@ func (m statusModel) View() string {
 		return m.renderContentScreen()
 	}
 	if m.diff && m.baseline != nil {
-		changes, err := Diff(*m.baseline, materializeNativeBundle(m.bundle))
+		changes, err := PublishDiff(*m.baseline, m.bundle)
 		if err != nil {
 			return "Diff error: " + err.Error() + "\n"
 		}
-		return m.renderScrollable("Draft diff", FormatChanges(changes), m.diffScroll, "d/ESC back  j/k scroll  q quit")
+		return m.renderScrollable("Home Assistant publish diff", FormatChanges(changes), m.diffScroll, "d/ESC back  j/k scroll  q quit")
 	}
 	if m.simulate {
 		return m.renderScrollable("Simulation: "+m.selectedScene(), RenderSimulation(m.bundle, m.selectedScene()), m.simulationScroll, "v/ESC back  j/k scroll  q quit")
@@ -1065,8 +1065,8 @@ func (m statusModel) renderDashboardWorkspace(width int) string {
 		}
 	case 3:
 		kinds := m.bundle.Kinds()
-		result.WriteString(sectionStyle.Render("YAML DRAFT") + "\n")
-		result.WriteString(mutedStyle.Render("Proposed native Home Assistant YAML; select a file and press Enter to inspect it.") + "\n\n")
+		result.WriteString(sectionStyle.Render("DESIGNER DRAFT") + "\n")
+		result.WriteString(mutedStyle.Render("Designer working YAML; select a file and press Enter to inspect it.") + "\n\n")
 		nameWidth := 0
 		for _, kind := range kinds {
 			if name := len(filenameForKind(kind)); name > nameWidth {
@@ -1159,7 +1159,7 @@ func (m statusModel) renderContentScreen() string {
 		end = len(lines)
 	}
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("Draft content: "+filenameForKind(kind)) + "\n")
+	body.WriteString(titleStyle.Render("Designer draft: "+filenameForKind(kind)) + "\n")
 	body.WriteString(mutedStyle.Render(fmt.Sprintf("%s · %d entries · working copy only", kind, draftEntryCount(m.bundle.Files[kind].Data))) + "\n\n")
 	for _, line := range lines[start:end] {
 		body.WriteString(line + "\n")
@@ -2668,8 +2668,8 @@ func RenderPrompt(m statusModel) string {
 		}
 		diff := ""
 		if m.baseline != nil {
-			if changes, err := Diff(*m.baseline, materializeNativeBundle(m.bundle)); err == nil {
-				diff = "\n" + FormatChanges(changes)
+			if changes, err := PublishDiff(*m.baseline, m.bundle); err == nil {
+				diff = "\n" + titleStyle.Render("Home Assistant publish diff") + "\n\n" + FormatChanges(changes)
 			}
 		}
 		return message + diff + "\nType PUBLISH to publish the draft to Home Assistant\n> " + m.input + "\n\nEnter confirm | ESC cancel\n"

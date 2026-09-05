@@ -4,8 +4,9 @@
 
 A local Go TUI for designing, simulating, testing, and publishing holiday and
 seasonal lighting configuration. Home Assistant remains the only production
-source of truth. The designer keeps local native-HA-YAML drafts and never adds
-designer entities, metadata, or runtime dependencies to HA.
+source of truth. The designer keeps local YAML working drafts and never adds
+designer entities or runtime dependencies to HA. Those drafts may contain
+designer-only color metadata, which is removed before diffing or publishing.
 
 ## Decisions
 
@@ -15,8 +16,9 @@ designer entities, metadata, or runtime dependencies to HA.
   publishing uses a separate file transport because YAML-defined HA entries
   are not editable through storage config endpoints. SSH is the production
   transport; local filesystem transport is used for tests.
-- Configuration: native HA YAML drafts (`scenes.yaml`, `scripts.yaml`,
-  `automations.yaml`, `input_select.yaml`).
+- Configuration: designer working YAML (`scenes.yaml`, `scripts.yaml`,
+  `automations.yaml`, `input_select.yaml`, `colors.yaml`) projected to native
+  HA YAML for review and publication.
 - HA file ownership: one designer-owned native YAML file per configuration
   kind; unrelated Home Assistant entries remain in separate files.
 - Dates: fixed or anchor-relative windows; generated automations evaluate time
@@ -29,12 +31,12 @@ designer entities, metadata, or runtime dependencies to HA.
 ## Runtime flow
 
 ```text
-HA import -> local YAML draft -> TUI edit/simulate -> native-YAML diff
-                                      |
-                                      v
-                           stale check -> backup -> publish -> verify
+HA import -> designer YAML draft -> TUI edit/simulate -> native HA projection
                                                         |
-                                                   rollback on error
+                                                        v
+                         publish diff -> stale check -> backup -> publish -> verify
+                                                                          |
+                                                                     rollback on error
 ```
 
 Preview captures exact available light state over WebSocket, applies a scene
@@ -49,7 +51,8 @@ Missing, unknown, or unavailable lights fail safely.
 3. Refuse publication if the live fingerprint differs from the imported
    baseline. The selected YAML draft carries a local sidecar fingerprint of
    the complete imported HA YAML set, so unrelated file changes also block.
-4. Show semantic changes in native-YAML form and require confirmation.
+4. Project both baseline and draft to native HA YAML, show that semantic diff,
+   and publish the same projected data after confirmation.
 5. Back up the imported state locally.
 6. Update only changed or explicitly approved entries; never replace an entire
    HA category.

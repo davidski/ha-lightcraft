@@ -59,6 +59,52 @@ func TestNativeYAMLPublishPreservesUnrelatedEntries(t *testing.T) {
 	}
 }
 
+func TestNativeYAMLPublishMatchesReviewedProjection(t *testing.T) {
+	dir := t.TempDir()
+	writeNative(t, dir, "scenes.yaml", "- id: keep\n  name: Old\n  entities: {}\n")
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: dir}, ConfigDir: "."}
+	imported, err := store.Import(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := Bundle{Files: map[ConfigKind]Config{Scenes: {Kind: Scenes, Data: []any{map[string]any{
+		"id": "keep", "name": "New", "entities": map[string]any{}, "color_ref": "orange",
+	}}}}}
+	draft, _ = withHash(draft)
+	designerBaseline := imported
+	designerBaseline.Files[Colors] = Config{Kind: Colors, Data: map[string]any{"orange": map[string]any{"name": "Orange", "x": .6, "y": .3}}}
+	designerBaseline.Files[Scenes].Data.([]any)[0].(map[string]any)["color_ref"] = "orange"
+	designerBaseline, _ = withHash(designerBaseline)
+	changes, err := PublishDiff(designerBaseline, draft)
+	if err != nil || len(changes) != 1 {
+		t.Fatalf("changes=%#v err=%v", changes, err)
+	}
+	if strings.Contains(FormatChanges(changes), "color_ref") || changes[0].Kind != Scenes {
+		t.Fatalf("publish diff contains designer metadata: %s", FormatChanges(changes))
+	}
+	if err := store.Publish(context.Background(), draft, designerBaseline, bundleRefs(imported), nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "scenes.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "color_ref") {
+		t.Fatalf("published YAML contains designer metadata: %s", data)
+	}
+	published, err := store.Import(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishedJSON, err := canonicalJSON(published.Files[Scenes].Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(publishedJSON) != changes[0].New {
+		t.Fatalf("published scenes differ from reviewed projection\npublished: %s\nreviewed: %s", publishedJSON, changes[0].New)
+	}
+}
+
 func TestNativeYAMLPublishRejectsUnrelatedLiveChange(t *testing.T) {
 	dir := t.TempDir()
 	writeNative(t, dir, "scenes.yaml", "- id: keep\n  name: Old\n  entities: {}\n- id: other\n  name: Preserve\n  entities: {}\n")

@@ -95,7 +95,7 @@ func TestDraftContentViewShowsWorkingCopy(t *testing.T) {
 		Scenes: {Kind: Scenes, Data: []any{map[string]any{"id": "halloween", "name": "Halloween"}}},
 	}}}
 	view := m.View()
-	if !strings.Contains(view, "Draft content: scenes.yaml") || !strings.Contains(view, "halloween") {
+	if !strings.Contains(view, "Designer draft: scenes.yaml") || !strings.Contains(view, "halloween") {
 		t.Fatalf("content view = %q", view)
 	}
 }

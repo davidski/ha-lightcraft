@@ -14,6 +14,10 @@ type Change struct {
 	New  string
 }
 
+func PublishDiff(old, draft Bundle) ([]Change, error) {
+	return Diff(materializeNativeBundle(old), materializeNativeBundle(draft))
+}
+
 func Diff(old, next Bundle) ([]Change, error) {
 	seen := map[ConfigKind]bool{}
 	for kind := range old.Files {
