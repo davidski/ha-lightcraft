@@ -36,6 +36,11 @@ automatically. The web interface edits Scenes, Sequences, Schedules, and Colors
 in memory, shows the current YAML and diff, and writes the draft files only
 when **Save draft files** is selected. Pass `--against DIR` to compare with an
 imported baseline; without it, the diff is against the draft at server startup.
+Publishing is available only with that imported baseline and the configured
+Home Assistant credentials. For example, `just web port="18080"
+against="drafts/holiday-baseline"`. The web app requires the draft to be saved,
+shows the exact diff, and requires typing `PUBLISH` before it runs the existing
+stale check, backup, validation, reload, verification, and rollback flow.
 
 The `config.yaml` file defines the HA connection and which entries are relevant
 to this project. The `files` section points each kind at its designer-owned

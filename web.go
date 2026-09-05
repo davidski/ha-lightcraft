@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -11,11 +12,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,6 +31,11 @@ type webApp struct {
 	persistedHash string
 	token         string
 	message       string
+	publisher     ConfigPublisher
+	refs          []ConfigRef
+	backupDir     string
+	publishError  string
+	baselineReady bool
 }
 
 var errWebDraftChanged = errors.New("draft files changed outside the web editor; restart to load them")
@@ -77,21 +85,23 @@ type webAssignment struct {
 }
 
 type webPage struct {
-	View        string
-	Message     string
-	Token       string
-	Hash        string
-	Dirty       bool
-	Scenes      []webScene
-	Colors      []webColor
-	Sequences   []webSequence
-	Assignments []webAssignment
-	Scene       webScene
-	Color       webColor
-	Sequence    webSequence
-	Assignment  webAssignment
-	YAML        string
-	Diff        string
+	View          string
+	Message       string
+	Token         string
+	Hash          string
+	Dirty         bool
+	Scenes        []webScene
+	Colors        []webColor
+	Sequences     []webSequence
+	Assignments   []webAssignment
+	Scene         webScene
+	Color         webColor
+	Sequence      webSequence
+	Assignment    webAssignment
+	YAML          string
+	Diff          string
+	PublishReady  bool
+	PublishReason string
 }
 
 func runWeb(args []string) error {
@@ -99,6 +109,12 @@ func runWeb(args []string) error {
 	draftDir := flags.String("draft", ".", "directory containing native HA YAML drafts")
 	baselineDir := flags.String("against", "", "baseline draft directory for diff")
 	configPath := flags.String("config", "", "YAML file containing Home Assistant settings")
+	backupDir := flags.String("backup-dir", "backups", "local HA config backup directory")
+	haURL := flags.String("ha-url", os.Getenv("HOMEASSISTANT_URL"), "Home Assistant URL")
+	tokenEnv := flags.String("token-env", "HOMEASSISTANT_TOKEN", "environment variable containing HA token")
+	sshHost := flags.String("ssh-host", os.Getenv("HOMEASSISTANT_SSH_HOST"), "SSH host for native HA YAML")
+	sshUser := flags.String("ssh-user", os.Getenv("HOMEASSISTANT_SSH_USER"), "SSH user for native HA YAML")
+	haConfigDir := flags.String("ha-config-dir", os.Getenv("HOMEASSISTANT_CONFIG_DIR"), "remote Home Assistant configuration directory")
 	port := flags.Int("port", 8080, "local web server port")
 	open := flags.Bool("open", true, "open the web interface in a browser")
 	if err := flags.Parse(args); err != nil {
@@ -107,14 +123,36 @@ func runWeb(args []string) error {
 	if *port < 1 || *port > 65535 {
 		return fmt.Errorf("web port must be 1-65535")
 	}
-	if *configPath != "" {
-		if _, err := loadProjectConfig(*configPath); err != nil {
-			return err
-		}
-	}
 	app, err := newWebApp(*draftDir, *baselineDir)
 	if err != nil {
 		return err
+	}
+	app.backupDir = *backupDir
+	if *baselineDir == "" {
+		app.publishError = "Start the web editor with --against DIR to enable publishing."
+	} else if *configPath == "" {
+		app.publishError = "Start the web editor with --config FILE to enable publishing."
+	} else {
+		config, configErr := loadProjectConfig(*configPath)
+		if configErr != nil {
+			return configErr
+		}
+		applyProjectConfig(config, sshHost, sshUser, haConfigDir, haURL)
+		filePaths, configErr := configFilePaths(config)
+		if configErr != nil {
+			return configErr
+		}
+		app.refs, configErr = configRefs(config)
+		if configErr != nil {
+			return configErr
+		}
+		if len(app.refs) == 0 {
+			app.refs = bundleRefs(app.baseline)
+		}
+		app.publisher, configErr = publisherFor(*sshHost, *sshUser, *haConfigDir, *haURL, os.Getenv(*tokenEnv), filePaths)
+		if configErr != nil {
+			app.publishError = configErr.Error()
+		}
 	}
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if err != nil {
@@ -150,7 +188,7 @@ func newWebApp(draftDir, baselineDir string) (*webApp, error) {
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("create web session: %w", err)
 	}
-	return &webApp{draftDir: draftDir, bundle: bundle, baseline: baseline, persistedHash: bundle.Hash, token: hex.EncodeToString(tokenBytes)}, nil
+	return &webApp{draftDir: draftDir, bundle: bundle, baseline: baseline, persistedHash: bundle.Hash, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != ""}, nil
 }
 
 func (a *webApp) handler() http.Handler {
@@ -162,6 +200,7 @@ func (a *webApp) handler() http.Handler {
 	mux.HandleFunc("POST /color", a.saveColor)
 	mux.HandleFunc("POST /delete", a.deleteDraftItem)
 	mux.HandleFunc("POST /save", a.saveDraft)
+	mux.HandleFunc("POST /publish", a.publishDraft)
 	return mux
 }
 
@@ -247,10 +286,21 @@ func (a *webApp) page(view, edit string) (webPage, error) {
 		return webPage{}, err
 	}
 	page.Diff = FormatChanges(changes)
+	page.PublishReason = a.publishError
+	if page.PublishReason == "" && page.Dirty {
+		page.PublishReason = "Save the draft files before publishing."
+	}
+	if page.PublishReason == "" && len(changes) == 0 {
+		page.PublishReason = "No changes to publish."
+	}
+	if page.PublishReason == "" && webHasDeletions(a.baseline, a.bundle) {
+		page.PublishReason = "Home Assistant deletions require the TUI confirmation flow."
+	}
+	page.PublishReady = a.baselineReady && a.publisher != nil && page.PublishReason == ""
 	return page, nil
 }
 
-func (a *webApp) post(w http.ResponseWriter, r *http.Request, view string, mutate func(Bundle, url.Values) (Bundle, error)) {
+func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success string, mutate func(Bundle, url.Values) (Bundle, error)) {
 	if !validWebHost(r.Host) {
 		http.Error(w, "invalid host", http.StatusForbidden)
 		return
@@ -280,6 +330,7 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view string, mutat
 		http.Error(w, "draft changed; reload the page", http.StatusConflict)
 		return
 	}
+	a.message = ""
 	next, err := mutate(a.bundle, r.Form)
 	if errors.Is(err, errWebDraftChanged) {
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -289,16 +340,15 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view string, mutat
 		a.message = "Could not update draft: " + err.Error()
 	} else {
 		a.bundle = next
-		a.message = "Draft updated in memory. Save when ready."
-		if view == "yaml" {
-			a.message = "Draft saved to disk."
+		if a.message == "" {
+			a.message = success
 		}
 	}
 	http.Redirect(w, r, "/?view="+url.QueryEscape(view), http.StatusSeeOther)
 }
 
 func (a *webApp) saveScene(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "scenes", func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "scenes", "Draft updated in memory. Save when ready.", func(bundle Bundle, form url.Values) (Bundle, error) {
 		name, colorID := strings.TrimSpace(form.Get("name")), form.Get("color")
 		color, ok := colorDefinitions(bundle)[colorID]
 		brightness, err := strconv.Atoi(form.Get("brightness"))
@@ -329,7 +379,7 @@ func (a *webApp) saveScene(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) saveSequence(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "sequences", func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "sequences", "Draft updated in memory. Save when ready.", func(bundle Bundle, form url.Values) (Bundle, error) {
 		sequence := ColorSequence{ID: form.Get("id"), Name: strings.TrimSpace(form.Get("name")), Repeat: form.Get("repeat") == "on"}
 		if sequence.ID == "" {
 			sequence.ID = colorID(sequence.Name)
@@ -366,7 +416,7 @@ func (a *webApp) saveSequence(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) saveSchedule(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "schedules", func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "schedules", "Draft updated in memory. Save when ready.", func(bundle Bundle, form url.Values) (Bundle, error) {
 		assignment := LightingAssignment{
 			ID: form.Get("id"), Name: strings.TrimSpace(form.Get("name")), Sequence: form.Get("sequence"),
 			Targets: splitWebValues(form.Get("targets")), Start: strings.TrimSpace(form.Get("start")), End: strings.TrimSpace(form.Get("end")),
@@ -383,7 +433,7 @@ func (a *webApp) saveSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) saveColor(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "colors", func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "colors", "Draft updated in memory. Save when ready.", func(bundle Bundle, form url.Values) (Bundle, error) {
 		name := strings.TrimSpace(form.Get("name"))
 		x, xErr := strconv.ParseFloat(form.Get("x"), 64)
 		y, yErr := strconv.ParseFloat(form.Get("y"), 64)
@@ -402,7 +452,7 @@ func (a *webApp) saveColor(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) deleteDraftItem(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "", func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "", "Draft updated in memory. Save when ready.", func(bundle Bundle, form url.Values) (Bundle, error) {
 		id := form.Get("id")
 		switch form.Get("kind") {
 		case "scenes":
@@ -425,7 +475,7 @@ func (a *webApp) deleteDraftItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) saveDraft(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "yaml", func(bundle Bundle, _ url.Values) (Bundle, error) {
+	a.post(w, r, "yaml", "Draft saved to disk.", func(bundle Bundle, _ url.Values) (Bundle, error) {
 		if err := ValidateBundle(bundle); err != nil {
 			return Bundle{}, err
 		}
@@ -442,6 +492,69 @@ func (a *webApp) saveDraft(w http.ResponseWriter, r *http.Request) {
 		a.persistedHash = bundle.Hash
 		return bundle, nil
 	})
+}
+
+func (a *webApp) publishDraft(w http.ResponseWriter, r *http.Request) {
+	a.post(w, r, "yaml", "Published, verified, and backed up.", func(bundle Bundle, form url.Values) (Bundle, error) {
+		if form.Get("confirmation") != "PUBLISH" {
+			return Bundle{}, fmt.Errorf("type PUBLISH to confirm")
+		}
+		if !a.baselineReady || a.publisher == nil {
+			return Bundle{}, fmt.Errorf("publishing is unavailable: %s", a.publishError)
+		}
+		if bundle.Hash != a.persistedHash {
+			return Bundle{}, fmt.Errorf("save the draft files before publishing")
+		}
+		disk, err := LoadBundle(a.draftDir)
+		if err != nil {
+			return Bundle{}, err
+		}
+		if disk.Hash != a.persistedHash {
+			return Bundle{}, errWebDraftChanged
+		}
+		changes, err := PublishDiff(a.baseline, bundle)
+		if err != nil {
+			return Bundle{}, err
+		}
+		if len(changes) == 0 {
+			return Bundle{}, fmt.Errorf("no changes to publish")
+		}
+		if webHasDeletions(a.baseline, bundle) {
+			return Bundle{}, fmt.Errorf("Home Assistant deletions require the TUI confirmation flow")
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		if err := a.publisher.Publish(ctx, bundle, a.baseline, a.refs, nil, a.backupDir); err != nil {
+			return Bundle{}, fmt.Errorf("publish failed: %w", err)
+		}
+		if importer, ok := a.publisher.(interface {
+			Import(context.Context, []ConfigRef) (Bundle, error)
+		}); ok {
+			refreshed, err := importer.Import(ctx, a.refs)
+			if err != nil {
+				a.message = "Published, verified, and backed up. Could not refresh the baseline: " + err.Error()
+				a.publisher = nil
+				a.publishError = "Restart the web editor before publishing again."
+			} else {
+				a.baseline = refreshed
+			}
+		} else {
+			a.publisher = nil
+			a.publishError = "Restart the web editor before publishing again."
+		}
+		return bundle, nil
+	})
+}
+
+func webHasDeletions(old, next Bundle) bool {
+	oldEntries := bundleEntries(materializeNativeBundle(old))
+	newEntries := bundleEntries(materializeNativeBundle(next))
+	for ref := range oldEntries {
+		if _, exists := newEntries[ref]; !exists {
+			return true
+		}
+	}
+	return false
 }
 
 func splitWebValues(value string) []string {
@@ -499,6 +612,7 @@ var webTemplate = template.Must(template.New("web").Parse(`<!doctype html>
 :root{color-scheme:dark;--bg:#11131a;--panel:#1c202b;--line:#343b4c;--text:#f5f6fa;--muted:#a8b0c2;--accent:#78d6c6;--danger:#ff9b9b}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}header{padding:24px max(20px,calc((100% - 1100px)/2));border-bottom:1px solid var(--line);display:flex;gap:20px;align-items:center;justify-content:space-between}h1{font-size:22px;margin:0}nav{display:flex;gap:8px;flex-wrap:wrap}nav a,.button{display:inline-block;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--text);text-decoration:none;background:#252b39}nav a.active{border-color:var(--accent);color:var(--accent)}main{max-width:1100px;margin:0 auto;padding:24px 20px 60px}.notice{background:#183d37;border:1px solid #2b7165;padding:10px 14px;border-radius:8px;margin-bottom:18px}.status{color:var(--muted);font-size:13px}.dirty{color:#ffd479}.grid{display:grid;grid-template-columns:minmax(240px,1fr) minmax(360px,2fr);gap:20px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}h2{font-size:18px;margin:0 0 16px}h3{font-size:15px;margin:22px 0 10px}.items{list-style:none;padding:0;margin:0}.items a{display:block;padding:10px;border-radius:7px;color:var(--text);text-decoration:none}.items a:hover{background:#292f3e}.meta{display:block;color:var(--muted);font-size:12px}label{display:block;color:var(--muted);font-size:13px;margin:12px 0 5px}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:7px;background:#11151f;color:var(--text);padding:9px 10px;font:inherit}textarea{min-height:76px;resize:vertical}input[type=checkbox]{width:auto;margin-right:8px}.check{color:var(--text)}button{border:0;border-radius:8px;background:var(--accent);color:#10211e;font-weight:700;padding:9px 14px;cursor:pointer;margin-top:16px}.step{border-top:1px solid var(--line);margin-top:16px;padding-top:4px}.step-grid{display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;gap:8px}pre{overflow:auto;background:#0d1016;border:1px solid var(--line);border-radius:8px;padding:14px;font:12px/1.5 ui-monospace,monospace;max-height:560px}.save{display:flex;align-items:center;gap:12px;margin-bottom:20px}.save button{margin:0}@media(max-width:760px){header{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}.step-grid{grid-template-columns:1fr 1fr}.step-grid label:first-child{grid-column:1/-1}}
 .danger{background:transparent;color:var(--danger);border:1px solid #824747}.step-actions{grid-column:1/-1}.step-actions button{margin:4px 6px 0 0;padding:5px 9px;background:#303747;color:var(--text)}
 input[type=color]{height:52px;padding:4px;cursor:pointer}
+.panel+.grid{margin-top:20px}
 </style>
 </head>
 <body>
@@ -514,5 +628,5 @@ input[type=color]{height:52px;padding:4px;cursor:pointer}
 {{if eq .View "colors"}}<div class="grid"><section class="panel"><h2>Colors</h2><ul class="items">{{range .Colors}}<li><a href="/?view=colors&edit={{.ID}}">{{.Name}} <span class="meta">{{.ID}} · {{printf "%.4f" .X}}, {{printf "%.4f" .Y}}</span></a></li>{{else}}<li class="status">No colors</li>{{end}}</ul><a class="button" href="/?view=colors">New color</a></section><section class="panel"><h2>{{if .Color.ID}}Edit color{{else}}New color{{end}}</h2><form method="post" action="/color"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="hash" value="{{.Hash}}"><input type="hidden" name="id" value="{{.Color.ID}}"><input type="hidden" name="kind" value="colors"><label for="color-name">Name</label><input id="color-name" name="name" required value="{{.Color.Name}}"><label for="color-picker">Color picker</label><input id="color-picker" type="color" value="{{.Color.Hex}}" oninput="setColorXY(this)"><label for="color-x">CIE x</label><input id="color-x" name="x" type="number" step="any" required value="{{.Color.X}}"><label for="color-y">CIE y</label><input id="color-y" name="y" type="number" step="any" required value="{{.Color.Y}}"><button>Update draft</button>{{if .Color.ID}} <button class="danger" formaction="/delete" formnovalidate onclick="return confirm('Delete this color from the draft?')">Delete from draft</button>{{end}}</form></section></div><script>function setColorXY(picker){const hex=picker.value,rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4)),x=.4124*rgb[0]+.3576*rgb[1]+.1805*rgb[2],y=.2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2],z=.0193*rgb[0]+.1192*rgb[1]+.9505*rgb[2],sum=x+y+z;if(!sum){picker.setCustomValidity('Choose a non-black color.');return}picker.setCustomValidity('');document.querySelector('#color-x').value=(x/sum).toFixed(6);document.querySelector('#color-y').value=(y/sum).toFixed(6)}</script>{{end}}
 {{if eq .View "sequences"}}<div class="grid"><section class="panel"><h2>Sequences</h2><ul class="items">{{range .Sequences}}<li><a href="/?view=sequences&edit={{.ID}}">{{.Name}} <span class="meta">{{.ID}} · {{len .Steps}} steps</span></a></li>{{else}}<li class="status">No sequences</li>{{end}}</ul><a class="button" href="/?view=sequences">New sequence</a></section><section class="panel"><h2>{{if .Sequence.ID}}Edit sequence{{else}}New sequence{{end}}</h2><form method="post" action="/sequence"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="hash" value="{{.Hash}}"><input type="hidden" name="id" value="{{.Sequence.ID}}"><input type="hidden" name="kind" value="sequences"><label for="sequence-name">Name</label><input id="sequence-name" name="name" required value="{{.Sequence.Name}}"><label class="check"><input name="repeat" type="checkbox" {{if .Sequence.Repeat}}checked{{end}}>Loop sequence</label><h3>Color steps</h3><div id="steps">{{range .Sequence.Steps}}{{$step := .}}<div class="step step-grid"><label>Name<input name="step_name" required value="{{.Name}}"></label><label>Catalog color<select name="step_color" required><option value="">Choose…</option>{{range $.Colors}}<option value="{{.ID}}" {{if eq $step.Color .ID}}selected{{end}}>{{.Name}}</option>{{end}}</select></label><label>Brightness<input name="step_brightness" type="number" min="1" max="255" required value="{{.Brightness}}"></label><label>Seconds<input name="step_hold" type="number" min="1" step="any" required value="{{.Hold}}"></label><label>Transition<input name="step_transition" type="number" min="0" step="any" required value="{{.Transition}}"></label><div class="step-actions"><button type="button" onclick="moveStep(this,-1)">↑</button><button type="button" onclick="moveStep(this,1)">↓</button><button type="button" onclick="removeStep(this)">Remove</button></div></div>{{end}}</div><button type="button" class="button" onclick="addStep()">Add color step</button> <button>Update draft</button>{{if .Sequence.ID}} <button class="danger" formaction="/delete" formnovalidate onclick="return confirm('Delete this sequence from the draft?')">Delete from draft</button>{{end}}</form></section></div><template id="step-template"><div class="step step-grid"><label>Name<input name="step_name" required></label><label>Catalog color<select name="step_color" required><option value="">Choose…</option>{{range .Colors}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label><label>Brightness<input name="step_brightness" type="number" min="1" max="255" required value="255"></label><label>Seconds<input name="step_hold" type="number" min="1" step="any" required value="6"></label><label>Transition<input name="step_transition" type="number" min="0" step="any" required value="0.5"></label><div class="step-actions"><button type="button" onclick="moveStep(this,-1)">↑</button><button type="button" onclick="moveStep(this,1)">↓</button><button type="button" onclick="removeStep(this)">Remove</button></div></div></template><script>function addStep(){document.querySelector('#steps').append(document.querySelector('#step-template').content.cloneNode(true))}function removeStep(button){button.closest('.step').remove()}function moveStep(button,direction){const step=button.closest('.step'),other=direction<0?step.previousElementSibling:step.nextElementSibling;if(other){step.parentNode.insertBefore(direction<0?step:other,direction<0?other:step)}}</script>{{end}}
 {{if eq .View "schedules"}}<div class="grid"><section class="panel"><h2>Schedules</h2><ul class="items">{{range .Assignments}}<li><a href="/?view=schedules&edit={{.ID}}">{{.Name}} <span class="meta">{{.Start}} – {{.End}} · {{if .Enabled}}enabled{{else}}disabled{{end}}</span></a></li>{{else}}<li class="status">No schedules</li>{{end}}</ul><a class="button" href="/?view=schedules">New schedule</a></section><section class="panel"><h2>{{if .Assignment.ID}}Edit schedule{{else}}New schedule{{end}}</h2><form method="post" action="/schedule"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="hash" value="{{.Hash}}"><input type="hidden" name="id" value="{{.Assignment.ID}}"><label for="schedule-name">Name</label><input id="schedule-name" name="name" required value="{{.Assignment.Name}}"><label for="schedule-sequence">Sequence</label><select id="schedule-sequence" name="sequence" required><option value="">Choose…</option>{{range .Sequences}}<option value="{{.ID}}" {{if eq $.Assignment.Sequence .ID}}selected{{end}}>{{.Name}}</option>{{end}}</select><label for="schedule-targets">Light targets</label><textarea id="schedule-targets" name="targets" required>{{.Assignment.Targets}}</textarea><div class="step-grid"><label>Start (MM-DD or YYYY-MM-DD)<input name="start" required value="{{.Assignment.Start}}"></label><label>End<input name="end" required value="{{.Assignment.End}}"></label><label>Start time or sunset<input name="on" required value="{{.Assignment.On}}"></label><label>Stop time<input name="off" required value="{{.Assignment.Off}}"></label><label>At stop<input name="finish" required value="{{.Assignment.Finish}}"></label></div><label class="check"><input name="enabled" type="checkbox" {{if .Assignment.Enabled}}checked{{end}}>Enabled</label><button>Update draft</button></form></section></div>{{end}}
-{{if eq .View "yaml"}}<form class="save" method="post" action="/save"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="hash" value="{{.Hash}}"><button>Save draft files</button><span class="status">Writes the current in-memory draft to disk.</span></form><div class="grid"><section class="panel"><h2>Draft YAML</h2><pre>{{.YAML}}</pre></section><section class="panel"><h2>Diff</h2><pre>{{.Diff}}</pre></section></div>{{end}}
+{{if eq .View "yaml"}}<form class="save" method="post" action="/save"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="hash" value="{{.Hash}}"><button>Save draft files</button><span class="status">Writes the current in-memory draft to disk.</span></form><section class="panel">{{if .PublishReady}}<h2>Publish to Home Assistant</h2><p class="status">The diff below will be validated, backed up, published, reloaded, and verified. Any failure triggers rollback.</p><form method="post" action="/publish"><input type="hidden" name="token" value="{{.Token}}"><input type="hidden" name="hash" value="{{.Hash}}"><label for="publish-confirmation">Type PUBLISH to confirm</label><input id="publish-confirmation" name="confirmation" required pattern="PUBLISH" autocomplete="off"><button class="danger">Publish to Home Assistant</button></form>{{else}}<h2>Publish to Home Assistant</h2><p class="status">{{.PublishReason}}</p>{{end}}</section><div class="grid"><section class="panel"><h2>Draft YAML</h2><pre>{{.YAML}}</pre></section><section class="panel"><h2>Diff</h2><pre>{{.Diff}}</pre></section></div>{{end}}
 </main></body></html>`))

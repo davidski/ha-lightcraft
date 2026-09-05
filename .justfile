@@ -50,9 +50,9 @@ run draft="drafts/holiday" config="config.yaml":
 	{{goenv}} go run . --draft {{draft}} --config {{config}}
 
 # Launch the local web editor and open it in a browser.
-web port="port=8080" draft="drafts/holiday" config="config.yaml":
+web port="port=8080" against="against=" draft="drafts/holiday" config="config.yaml":
 	@mkdir -p {{tmp}}
-	{{goenv}} go run . web --draft {{draft}} --config {{config}} --port {{replace(port, "port=", "")}}
+	{{goenv}} go run . web --draft {{draft}} --against '{{replace(against, "against=", "")}}' --config {{config}} --port {{replace(port, "port=", "")}}
 
 # Pull the configured Home Assistant YAML into a local draft.
 import draft="drafts/holiday" config="config.yaml":

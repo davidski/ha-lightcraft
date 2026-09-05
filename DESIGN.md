@@ -45,8 +45,12 @@ HA import -> designer YAML draft -> TUI edit/simulate ----> native HA projection
 The web editor keeps one in-memory draft behind a mutex. Mutation requests use
 a per-process token and expected bundle hash, so stale browser tabs cannot
 silently overwrite newer changes. Draft files change only through the explicit
-Save action. The web interface does not preview or publish to Home Assistant;
-those safety-sensitive operations remain in the TUI and CLI publish flow.
+Save action. The web interface does not preview Home Assistant; live preview
+remains in the TUI. Web publishing is enabled only when an
+imported baseline and HA credentials are configured, the in-memory draft has
+been saved without external file changes, and the user types `PUBLISH`. It
+delegates to the same stale-check, backup, validation, verification, and
+rollback publisher as the TUI and CLI flows.
 
 Preview captures exact available light state over WebSocket, applies a scene
 only after an explicit confirmation, and restores the captured state with a
