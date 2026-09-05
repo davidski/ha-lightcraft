@@ -263,6 +263,11 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if e.form == "pause" || e.form == "resume" {
 				return m.submitLightingControl()
 			}
+			if e.form == "assignment" && e.focus == 5 {
+				if e.error = assignmentDailyStartError(e.fields[e.focus].Value()); e.error != "" {
+					return m, nil
+				}
+			}
 			if e.form == "assignment" && (e.focus == 1 || e.focus == 2) {
 				e.picker, e.pick = true, 0
 				if e.focus == 2 && m.stateAPI != nil && len(m.inventoryStates) == 0 {
@@ -286,7 +291,13 @@ func (m statusModel) updateLighting(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, e.fields[e.focus].Focus()
 		}
 		var cmd tea.Cmd
+		if e.form == "assignment" && e.focus == 8 {
+			return m, nil
+		}
 		e.fields[e.focus], cmd = e.fields[e.focus].Update(key)
+		if e.form == "assignment" && e.focus == 5 {
+			e.error = assignmentDailyStartError(e.fields[e.focus].Value())
+		}
 		return m, cmd
 	}
 	if e.steps {
@@ -430,6 +441,17 @@ func (e lightingEditor) fieldOptions() []string {
 		return []string{"off", "leave"}
 	}
 	return nil
+}
+
+func assignmentDailyStartError(value string) string {
+	if value == "" || value == "sunset" {
+		return ""
+	}
+	parsed, err := time.Parse("15:04", value)
+	if err != nil || parsed.Format("15:04") != value {
+		return "Daily start must be HH:MM or sunset."
+	}
+	return ""
 }
 
 func (m statusModel) submitLightingControl() (tea.Model, tea.Cmd) {
@@ -647,7 +669,19 @@ func (m statusModel) renderLighting() string {
 				if i == e.focus {
 					prefix = "❯ "
 				}
-				if e.form == "sequence" || e.form == "step" {
+				if e.form == "assignment" && i == 8 {
+					enabled, disabled := "[ ] enabled", "[ ] disabled"
+					if field.Value() == "enabled" {
+						enabled = "[x] enabled"
+					} else {
+						disabled = "[x] disabled"
+					}
+					line := fmt.Sprintf("%s%-12s │ %s  %s", prefix, label, enabled, disabled)
+					if i == e.focus {
+						line = selectedStyle.Render(line)
+					}
+					lines = append(lines, line)
+				} else if e.form == "sequence" || e.form == "step" {
 					var line string
 					if e.form == "sequence" && i == 1 {
 						value := field.Value()

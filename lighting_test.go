@@ -275,8 +275,29 @@ func TestLightingEditorFlow(t *testing.T) {
 	}
 	m.editLightingAssignment("indoor_winter")
 	view := m.renderLighting()
-	if strings.Count(view, "│") != 9 || !strings.Contains(view, "│ Indoor winter") || !strings.Contains(view, "First date") || !strings.Contains(view, "Schedule") {
+	if strings.Count(view, "│") != 9 || !strings.Contains(view, "│ Indoor winter") || !strings.Contains(view, "First date") || !strings.Contains(view, "[x] enabled  [ ] disabled") {
 		t.Fatalf("schedule form is not rendered as nine label/value rows: %s", view)
+	}
+	m.lighting.focus = 5
+	m.lighting.fields[5].Focus()
+	m.lighting.fields[5].SetValue("")
+	updated, _ = m.updateLighting(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(statusModel)
+	if m.lighting.error != "Daily start must be HH:MM or sunset." {
+		t.Fatalf("invalid daily start was not rejected immediately: %q", m.lighting.error)
+	}
+	updated, _ = m.updateLighting(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(statusModel)
+	if m.lighting.focus != 5 {
+		t.Fatal("invalid daily start advanced to the next field")
+	}
+	m.lighting.focus = 8
+	m.lighting.fields[8].Focus()
+	beforeSchedule := m.lighting.fields[8].Value()
+	updated, _ = m.updateLighting(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	m = updated.(statusModel)
+	if m.lighting.fields[8].Value() != beforeSchedule {
+		t.Fatal("schedule checkbox accepted free text")
 	}
 	for _, size := range [][2]int{{80, 24}, {60, 18}, {100, 30}} {
 		m.width, m.height = size[0], size[1]
