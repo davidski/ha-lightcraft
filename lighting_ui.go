@@ -106,7 +106,7 @@ func (m *statusModel) editLightingAssignment(id string) {
 		a = LightingAssignment{Name: "New assignment", Sequence: ids[0], Start: "12-01", End: "12-31", On: "sunset", Off: "00:00", Finish: "off", Enabled: true}
 	}
 	m.lighting.assignment = a
-	m.lighting.openForm("assignment", []string{"Name", "Sequence (Enter to choose)", "Lights (Enter to choose; or type light IDs separated by ;)", "First date (MM-DD or YYYY-MM-DD)", "Last date (inclusive; same format)", "Daily start (HH:MM or sunset)", "Daily stop (HH:MM)", "At stop (off / leave / scene.entity_id)", "Schedule (enabled / disabled)"}, []string{a.Name, a.Sequence, strings.Join(a.Targets, ";"), a.Start, a.End, a.On, a.Off, a.Finish, map[bool]string{true: "enabled", false: "disabled"}[a.Enabled]})
+	m.lighting.openForm("assignment", []string{"Name", "Sequence", "Lights", "First date", "Last date", "Daily start", "Daily stop", "At stop", "Schedule"}, []string{a.Name, a.Sequence, strings.Join(a.Targets, ";"), a.Start, a.End, a.On, a.Off, a.Finish, map[bool]string{true: "enabled", false: "disabled"}[a.Enabled]})
 }
 
 func (m *statusModel) editLightingStep(index int) {
@@ -629,16 +629,19 @@ func (m statusModel) renderLighting() string {
 				}
 				lines = append(lines, "")
 			}
-			start, end := listWindow(len(e.fields), e.focus, max(1, (height-10)/2))
 			if e.form == "sequence" || e.form == "step" {
 				lines = append(lines, "Set the sequence name and playback mode.", "")
 				if e.form == "step" {
 					lines[len(lines)-2] = "Set the color, brightness, and timing for this step."
 				}
 			}
+			start, end := listWindow(len(e.fields), e.focus, max(1, (height-10)/2))
+			if e.form == "assignment" {
+				start, end = 0, len(e.fields)
+			}
 			for i := start; i < end; i++ {
 				field := e.fields[i]
-				field.Width = max(12, width-6)
+				field.Width = max(12, width-19)
 				label := e.labels[i]
 				prefix := "  "
 				if i == e.focus {
@@ -663,11 +666,27 @@ func (m statusModel) renderLighting() string {
 					}
 					lines = append(lines, line)
 				} else {
-					lines = append(lines, prefix+label, "  "+field.View())
+					line := fmt.Sprintf("%s%-12s │ %s", prefix, label, field.View())
+					if i == e.focus {
+						line = selectedStyle.Render(line)
+					}
+					lines = append(lines, line)
 				}
 			}
 			lines = append(lines, fmt.Sprintf("Field %d/%d · Enter advances; final Enter saves", e.focus+1, len(e.fields)))
 			if e.form == "assignment" {
+				hints := []string{
+					"Enter a descriptive schedule name.",
+					"Enter chooses a sequence; ←/→ changes the choice.",
+					"Enter chooses lights; separate typed entity IDs with ;.",
+					"Use MM-DD or YYYY-MM-DD.",
+					"Use the same format as First date; this date is included.",
+					"Use HH:MM or sunset.",
+					"Use HH:MM; overnight hours use the current date.",
+					"Choose off, leave, or scene.entity_id.",
+					"Choose enabled or disabled.",
+				}
+				lines = append(lines, hints[e.focus])
 				lines = append(lines, "Dates include the last day. Overnight hours use the current date.")
 			}
 			if e.form == "pause" {

@@ -274,6 +274,10 @@ func TestLightingEditorFlow(t *testing.T) {
 		t.Fatal("assignment not saved")
 	}
 	m.editLightingAssignment("indoor_winter")
+	view := m.renderLighting()
+	if strings.Count(view, "│") != 9 || !strings.Contains(view, "│ Indoor winter") || !strings.Contains(view, "First date") || !strings.Contains(view, "Schedule") {
+		t.Fatalf("schedule form is not rendered as nine label/value rows: %s", view)
+	}
 	for _, size := range [][2]int{{80, 24}, {60, 18}, {100, 30}} {
 		m.width, m.height = size[0], size[1]
 		for i := range m.lighting.fields {
