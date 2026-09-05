@@ -24,10 +24,12 @@ func TestWebDraftEditAndSave(t *testing.T) {
 	handler := app.handler()
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/?view=colors", nil)
+	request := httptest.NewRequest(http.MethodGet, "/?view=colors&edit=red", nil)
 	request.Host = "127.0.0.1:8080"
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "YAML / Diff") || !strings.Contains(response.Body.String(), "Red") {
+	body := response.Body.String()
+	wantHex := cieRGBHex(CIEColor{X: .64, Y: .33})
+	if response.Code != http.StatusOK || !strings.Contains(body, "YAML / Diff") || !strings.Contains(body, "Red") || !strings.Contains(body, `type="color" value="`+wantHex+`"`) || !strings.Contains(body, "setColorXY") {
 		t.Fatalf("unexpected color page: %d %s", response.Code, response.Body.String())
 	}
 
