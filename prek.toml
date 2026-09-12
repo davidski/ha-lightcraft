@@ -1,0 +1,7 @@
+[[repos]]
+repo = "https://github.com/golangci/golangci-lint"
+rev = "v2.13.2"
+
+[[repos.hooks]]
+id = "golangci-lint-full"
+args = ["--fix=false"]

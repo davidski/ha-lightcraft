@@ -1,0 +1,7 @@
+.tmp/
+.env
+.envrc
+ha-lightcraft
+backups/
+data/
+.ha-source-hash
