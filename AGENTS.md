@@ -21,3 +21,4 @@ When updating this file, preserve this bar for all agents and keep entries conci
 ## Delivery
 
 - For implementation requests, assign one owner to complete every requested in-scope change and its verification; diagnosis, gap discovery, and partial delivery are not completion.
+- For web interaction changes, verify the affected flow in a real browser; if browser validation is unavailable, report verification as incomplete or blocked.
