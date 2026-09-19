@@ -40,6 +40,37 @@ func TestSSHFileTransportReadFileIgnoresStderr(t *testing.T) {
 	}
 }
 
+func TestSSHFileTransportReadFileMapsRemoteMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	ssh := filepath.Join(dir, "ssh")
+	if err := os.WriteFile(ssh, []byte("#!/bin/sh\nexit 44\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := (SSHFileTransport{Host: "host"}).ReadFile(context.Background(), "/config/missing.yaml")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("err = %v, want os.ErrNotExist", err)
+	}
+}
+
+func TestSSHFileTransportReadFileDoesNotMaskLocalSSHError(t *testing.T) {
+	dir := t.TempDir()
+	ssh := filepath.Join(dir, "ssh")
+	if err := os.WriteFile(ssh, []byte("#!/bin/sh\nprintf '%s\\n' 'Warning: Identity file $/run/secrets/key not accessible: No such file or directory' >&2\nexit 255\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := (SSHFileTransport{Host: "host"}).ReadFile(context.Background(), "/config/missing.yaml")
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("err = %v, local SSH failure was misclassified as missing file", err)
+	}
+	if !strings.Contains(err.Error(), "Identity file") {
+		t.Fatalf("err = %v, missing SSH diagnostic", err)
+	}
+}
+
 func TestNativeYAMLImportWithoutRefsSelectsAllEntries(t *testing.T) {
 	dir := t.TempDir()
 	writeNative(t, dir, "automations.yaml", "- id: first\n  name: First\n  entities: {}\n- id: second\n  name: Second\n  entities: {}\n")

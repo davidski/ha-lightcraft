@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,17 +74,49 @@ func (t SSHFileTransport) run(ctx context.Context, remote string) ([]byte, error
 	args = append(args, t.target(), remote)
 	command := exec.CommandContext(ctx, "ssh", args...)
 	var stderr bytes.Buffer
-	command.Stderr = &stderr
+	command.Stderr = io.MultiWriter(&stderr, os.Stderr)
+	fmt.Fprintf(os.Stdout, "ha-lightcraft: ssh %s\n", t.target())
 	output, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("ssh: %w: %s", err, strings.TrimSpace(stderr.String()))
+		commandErr := &sshCommandError{err: err, stderr: stderr.String()}
+		fmt.Fprintf(os.Stderr, "ha-lightcraft: ssh %s failed: %v\n", t.target(), commandErr)
+		return nil, commandErr
 	}
 	return output, nil
 }
+
+type sshCommandError struct {
+	err    error
+	stderr string
+}
+
+func (e *sshCommandError) Error() string {
+	message := strings.TrimSpace(e.stderr)
+	if message == "" {
+		return fmt.Sprintf("ssh: %v", e.err)
+	}
+	return fmt.Sprintf("ssh: %v: %s", e.err, message)
+}
+
+func (e *sshCommandError) Unwrap() error { return e.err }
+
+func (e *sshCommandError) exitCode() int {
+	var exitErr *exec.ExitError
+	if errors.As(e.err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
+}
+
 func (t SSHFileTransport) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	data, err := t.run(ctx, "cat -- "+shellQuote(path))
-	if err != nil && strings.Contains(err.Error(), "No such file or directory") {
-		return nil, os.ErrNotExist
+	remote := "if [ -e " + shellQuote(path) + " ]; then cat -- " + shellQuote(path) + "; else exit 44; fi"
+	data, err := t.run(ctx, remote)
+	if err != nil {
+		var commandErr *sshCommandError
+		if errors.As(err, &commandErr) && commandErr.exitCode() == 44 {
+			return nil, os.ErrNotExist
+		}
+		return nil, err
 	}
 	return data, err
 }
