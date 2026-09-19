@@ -25,8 +25,11 @@ compiled into generated scripts.
 - HA access: direct REST/WebSocket state and validation APIs; native YAML
   publishing uses a separate file transport because YAML-defined HA entries
   are not editable through storage config endpoints. SSH is the production
-  transport; local filesystem transport is used for tests. REST supplies
-  configuration validation and reload, not a second publishing implementation.
+  transport; local filesystem transport is used for tests. The container
+  entrypoint creates a matching passwd/group identity for the configured
+  `PUID`/`PGID` before dropping privileges so OpenSSH can run under arbitrary
+  bind-mount ownership. REST supplies configuration validation and reload, not
+  a second publishing implementation.
 - Configuration: Home Assistant connection, package, and legacy migration
   settings come from environment variables; the designer working Bundle is
   projected to one native HA package file with top-level
