@@ -3,6 +3,12 @@ services:
     image: ghcr.io/davidski/ha-lightcraft:latest
     ports:
       - "${HA_LIGHTCRAFT_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     environment:
       HOMEASSISTANT_URL: ${HOMEASSISTANT_URL:-}
       HOMEASSISTANT_TOKEN: ${HOMEASSISTANT_TOKEN:-}

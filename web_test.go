@@ -13,6 +13,16 @@ import (
 	"testing"
 )
 
+func TestWebHealthz(t *testing.T) {
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	(&webApp{}).handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/plain; charset=utf-8" || response.Body.String() != "ok\n" {
+		t.Fatalf("healthz = %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+	}
+}
+
 func TestWebTemplateContextualEscaping(t *testing.T) {
 	malicious := `</script><script>alert("x")</script>&'"`
 	page := webPage{

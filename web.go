@@ -313,6 +313,7 @@ func newWebAppWithReferences(draftDir, baselineDir, referencesDir string, filePa
 func (a *webApp) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.index)
+	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /favicon.png", serveFavicon)
 	mux.HandleFunc("POST /sequence", a.saveSequence)
 	mux.HandleFunc("POST /schedule", a.saveSchedule)
@@ -324,6 +325,12 @@ func (a *webApp) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mux.ServeHTTP(w, stripForwardedWebPrefix(r, forwardedWebPrefix(r)))
 	})
+}
+
+func healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok\n"))
 }
 
 //go:embed favicon.png
