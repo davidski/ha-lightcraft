@@ -29,6 +29,7 @@ type webApp struct {
 	mu                 sync.Mutex
 	draftDir           string
 	baselineDir        string
+	allowedWebHosts    []string
 	filePaths          map[ConfigKind][]string
 	colorsDir          string
 	bundle             Bundle
@@ -312,7 +313,7 @@ func newWebAppWithReferences(draftDir, baselineDir, referencesDir string, filePa
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("create web session: %w", err)
 	}
-	return &webApp{draftDir: draftDir, baselineDir: baselineDir, filePaths: filePaths, colorsDir: referencesDir, bundle: bundle, baseline: baseline, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != "" && len(baseline.Files) > 0}, nil
+	return &webApp{draftDir: draftDir, baselineDir: baselineDir, allowedWebHosts: configuredWebHosts(), filePaths: filePaths, colorsDir: referencesDir, bundle: bundle, baseline: baseline, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != "" && len(baseline.Files) > 0}, nil
 }
 
 func (a *webApp) handler() http.Handler {
@@ -353,7 +354,7 @@ func (a *webApp) index(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !validWebHost(r.Host) {
+	if !a.validWebHost(r.Host) {
 		http.Error(w, "invalid host", http.StatusForbidden)
 		return
 	}
@@ -558,7 +559,7 @@ func renderWebLightColor(value map[string]any) string {
 }
 
 func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success string, persist bool, mutate func(Bundle, url.Values) (Bundle, error)) {
-	if !validWebHost(r.Host) {
+	if !a.validWebHost(r.Host) {
 		http.Error(w, "invalid host", http.StatusForbidden)
 		return
 	}
@@ -931,13 +932,36 @@ func splitWebValues(value string) []string {
 	return strings.FieldsFunc(value, func(r rune) bool { return r == ';' || r == ',' || r == '\n' || r == '\r' || r == ' ' || r == '\t' })
 }
 
-func validWebHost(hostport string) bool {
+func configuredWebHosts() []string {
+	values := splitWebValues(os.Getenv("WEB_ALLOWED_HOSTS"))
+	hosts := make([]string, 0, len(values))
+	for _, value := range values {
+		if host := webHost(value); host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
+}
+
+func webHost(hostport string) string {
 	host := hostport
 	if parsed, _, err := net.SplitHostPort(hostport); err == nil {
 		host = parsed
 	}
-	host = strings.Trim(host, "[]")
-	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+	return strings.ToLower(strings.Trim(host, "[]"))
+}
+
+func (a *webApp) validWebHost(hostport string) bool {
+	host := webHost(hostport)
+	if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+		return true
+	}
+	for _, allowed := range a.allowedWebHosts {
+		if host == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func webStepColor(bundle Bundle, step ColorStep) string {

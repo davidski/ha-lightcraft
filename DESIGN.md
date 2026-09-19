@@ -19,7 +19,9 @@ compiled into generated scripts.
   When fronted by a
   reverse proxy, it accepts a validated `X-Forwarded-Prefix` while the proxy
   strips that prefix before forwarding; generated links and redirects retain
-  the external path.
+  the external path. Loopback hosts are always allowed, and exact public host
+  names may be added with `WEB_ALLOWED_HOSTS`; arbitrary hostnames are
+  rejected.
 - HA access: direct REST/WebSocket state and validation APIs; native YAML
   publishing uses a separate file transport because YAML-defined HA entries
   are not editable through storage config endpoints. SSH is the production
@@ -82,7 +84,9 @@ HA package -> `<data>/current` -> `<data>/proposed` -> TUI/web edit -> native HA
 
 An empty local workspace is a valid web starting state; the web Publish view
 offers a confirmation-protected import that refreshes both snapshots and keeps
-the existing local color catalog. The current snapshot preserves the configured
+the existing local color catalog. The web host guard allows loopback by default
+and exact configured public hosts through `WEB_ALLOWED_HOSTS`, while rejecting
+other hostnames. The current snapshot preserves the configured
 HA package path for ordinary file diffs while local package drafts use the flat
 layout described above. Web and
 TUI edits write only to `<data>/proposed`;

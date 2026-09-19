@@ -90,6 +90,7 @@ beside its full contents and publish changes.
 - `HOMEASSISTANT_CONFIG_DIR` (default empty): remote Home Assistant configuration directory, typically `/config`.
 - `HOMEASSISTANT_PACKAGE` (default `packages/ha_lightcraft.yaml`): remote designer-owned Home Assistant package path.
 - `HOMEASSISTANT_LEGACY_SCENES_FILE` (default empty): optional remote scene file used only when `import` migrates the old `holiday_lights` format.
+- `WEB_ALLOWED_HOSTS` (default empty): comma-separated external hostnames accepted by the web editor in addition to loopback hosts. Use this when serving the editor through a reverse proxy, for example `cherry.woohouse.world`.
 - `PUID` (default `1000`): numeric user ID used for files written to bind-mounted directories.
 - `PGID` (default `1000`): numeric group ID used for files written to bind-mounted directories.
 
@@ -98,11 +99,12 @@ the corresponding command-line flags override their environment values.
 
 ### Hosting and security
 
-The web app is intended for Local-only hosting in a trusted environment. While
-sub-path hosting via `X-Forwarded-Prefix` headers is supported, neither
-user authentication nor HTTPS is provided. Be sure you understand your
-threat model and only expose the web interface with a reverse proxy that
-provides security before deploying this in on untrusted network.
+The web app is intended for local hosting in a trusted environment. While
+sub-path hosting via `X-Forwarded-Prefix` headers is supported, neither user
+authentication nor HTTPS is provided. For reverse-proxy hosting, set
+`WEB_ALLOWED_HOSTS` to the exact public hostname and configure the proxy to
+authenticate requests and strip the external path prefix. Lightcraft continues
+to accept loopback hosts by default and rejects other hostnames.
 
 ## Configuration and lighting model
 

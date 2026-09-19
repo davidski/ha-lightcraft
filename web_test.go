@@ -23,6 +23,35 @@ func TestWebHealthz(t *testing.T) {
 	}
 }
 
+func TestWebAllowedHosts(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveBundle(dir, testLightingBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WEB_ALLOWED_HOSTS", "cherry.woohouse.world, editor.example.test")
+	app, err := newWebApp(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		host string
+		want int
+	}{
+		{host: "127.0.0.1:8080", want: http.StatusOK},
+		{host: "CHERRY.WOOHOUSE.WORLD", want: http.StatusOK},
+		{host: "editor.example.test:443", want: http.StatusOK},
+		{host: "untrusted.example.test", want: http.StatusForbidden},
+	} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.Host = test.host
+		app.handler().ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Errorf("Host %q = %d, want %d", test.host, response.Code, test.want)
+		}
+	}
+}
+
 func TestWebTemplateContextualEscaping(t *testing.T) {
 	malicious := `</script><script>alert("x")</script>&'"`
 	page := webPage{
