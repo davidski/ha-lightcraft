@@ -86,10 +86,12 @@ HA package -> `<data>/current` -> `<data>/proposed` -> TUI/web edit -> native HA
 ```
 
 An empty local workspace is a valid web starting state; the web Publish view
-offers a confirmation-protected import that refreshes both snapshots and keeps
+offers an import that refreshes both snapshots and keeps
 the existing local color catalog. The web host guard allows loopback by default
 and exact configured public hosts through `WEB_ALLOWED_HOSTS`, while rejecting
-other hostnames. The current snapshot preserves the configured
+other hostnames. Import requires confirmation when replacing proposed native
+HA files, but an empty proposed workspace can be initialized directly. The
+current snapshot preserves the configured
 HA package path for ordinary file diffs while local package drafts use the flat
 layout described above. Web and
 TUI edits write only to `<data>/proposed`;

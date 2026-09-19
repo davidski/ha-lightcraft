@@ -334,6 +334,7 @@ func (s NativeYAMLStore) Pull(ctx context.Context, dir string) (Bundle, error) {
 			if removeErr := os.Remove(filepath.Join(dir, localPackage)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 				return Bundle{}, fmt.Errorf("remove missing source file %s: %w", localPackage, removeErr)
 			}
+			return Bundle{}, fmt.Errorf("%w found at %s", errNoNativeYAML, remotePath)
 		} else {
 			if err != nil {
 				return Bundle{}, fmt.Errorf("read %s: %w", remotePath, err)

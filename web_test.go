@@ -179,14 +179,13 @@ func TestWebStartsEmptyAndImportsHomeAssistantYAML(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/?view=publish", nil)
 	request.Host = "127.0.0.1:8080"
 	app.handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Type IMPORT to confirm") {
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "Type IMPORT to confirm") {
 		t.Fatalf("empty web import form = %d %s", response.Code, response.Body.String())
 	}
 
 	postForm(t, app.handler(), "/import", url.Values{
-		"token":        {app.token},
-		"hash":         {app.bundle.Hash},
-		"confirmation": {"IMPORT"},
+		"token": {app.token},
+		"hash":  {app.bundle.Hash},
 	}, http.StatusSeeOther)
 	if !app.baselineReady || len(app.bundle.Files) != 3 {
 		t.Fatalf("import did not initialize web state: baseline=%v bundle=%#v", app.baselineReady, app.bundle)
@@ -196,6 +195,17 @@ func TestWebStartsEmptyAndImportsHomeAssistantYAML(t *testing.T) {
 	}
 	if _, err := LoadBundleAt(draftDir, paths); err != nil {
 		t.Fatalf("imported draft missing: %v", err)
+	}
+	postForm(t, app.handler(), "/import", url.Values{
+		"token": {app.token},
+		"hash":  {app.bundle.Hash},
+	}, http.StatusSeeOther)
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/?view=publish", nil)
+	request.Host = "127.0.0.1:8080"
+	app.handler().ServeHTTP(response, request)
+	if !strings.Contains(response.Body.String(), "type IMPORT to confirm") {
+		t.Fatalf("non-empty web import did not require confirmation: %s", response.Body.String())
 	}
 }
 

@@ -186,34 +186,35 @@ type webLight struct {
 }
 
 type webPage struct {
-	View           string
-	Message        string
-	Token          string
-	Hash           string
-	Unpublished    bool
-	Colors         []webColor
-	Sequences      []webSequence
-	Assignments    []webAssignment
-	Color          webColor
-	Sequence       webSequence
-	Assignment     webAssignment
-	YAMLFile       string
-	YAML           string
-	Diff           string
-	ImportReady    bool
-	ImportReason   string
-	PublishReady   bool
-	PublishReason  string
-	Lights         []webLight
-	ScheduleLights []webLight
-	WLEDLights     []webLight
-	WLEDSelects    []webSelect
-	WLEDChoices    []webWLEDChoice
-	LiveReady      bool
-	AgendaDate     string
-	AgendaPrevious string
-	AgendaNext     string
-	Agenda         []scheduleAgendaDay
+	View                    string
+	Message                 string
+	Token                   string
+	Hash                    string
+	Unpublished             bool
+	Colors                  []webColor
+	Sequences               []webSequence
+	Assignments             []webAssignment
+	Color                   webColor
+	Sequence                webSequence
+	Assignment              webAssignment
+	YAMLFile                string
+	YAML                    string
+	Diff                    string
+	ImportReady             bool
+	ImportReason            string
+	ImportNeedsConfirmation bool
+	PublishReady            bool
+	PublishReason           string
+	Lights                  []webLight
+	ScheduleLights          []webLight
+	WLEDLights              []webLight
+	WLEDSelects             []webSelect
+	WLEDChoices             []webWLEDChoice
+	LiveReady               bool
+	AgendaDate              string
+	AgendaPrevious          string
+	AgendaNext              string
+	Agenda                  []scheduleAgendaDay
 }
 
 func runWeb(args []string) error {
@@ -540,6 +541,7 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 	page.Unpublished = a.baselineReady && len(changes) > 0
 	page.PublishReason = a.publishError
 	page.ImportReady = a.importer != nil
+	page.ImportNeedsConfirmation = len(nativeDraftKinds(a.bundle)) > 0
 	if !page.ImportReady {
 		page.ImportReason = "Import requires SSH and Home Assistant configuration."
 	}
@@ -750,8 +752,8 @@ func (a *webApp) deleteDraftItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) importDraft(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "yaml", "Imported Home Assistant YAML.", false, func(_ Bundle, form url.Values) (Bundle, error) {
-		if form.Get("confirmation") != "IMPORT" {
+	a.post(w, r, "yaml", "Imported Home Assistant YAML.", false, func(bundle Bundle, form url.Values) (Bundle, error) {
+		if len(nativeDraftKinds(bundle)) > 0 && form.Get("confirmation") != "IMPORT" {
 			return Bundle{}, fmt.Errorf("type IMPORT to confirm")
 		}
 		if a.importer == nil || a.baselineDir == "" {

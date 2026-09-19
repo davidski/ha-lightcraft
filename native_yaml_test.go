@@ -174,6 +174,18 @@ func TestNativeYAMLPullFlattensPackageDraftPath(t *testing.T) {
 	}
 }
 
+func TestNativeYAMLPullReportsMissingRemotePackagePath(t *testing.T) {
+	remote := t.TempDir()
+	packagePath := "packages/ha_lightcraft.yaml"
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: remote}, ConfigDir: "ha-config", FilePaths: map[ConfigKind][]string{
+		Scripts: {packagePath}, Automations: {packagePath}, Helpers: {packagePath},
+	}}
+	_, err := store.Pull(context.Background(), t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "no native HA YAML files found at ha-config/packages/ha_lightcraft.yaml") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestNativeYAMLPublishPreservesUnrelatedEntries(t *testing.T) {
 	dir := t.TempDir()
 	writeNative(t, dir, "automations.yaml", "- id: keep\n  name: Old\n  entities: {}\n- id: other\n  name: Preserve\n  entities: {}\n")
