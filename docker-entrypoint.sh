@@ -17,4 +17,7 @@ case "${pgid}" in
         ;;
 esac
 
+mkdir -p /data/data/current /data/data/proposed /data/backups
+chown -R "${puid}:${pgid}" /data/data /data/backups
+
 exec su-exec "${puid}:${pgid}" /usr/local/bin/ha-lightcraft "$@"

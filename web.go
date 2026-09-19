@@ -28,6 +28,7 @@ import (
 type webApp struct {
 	mu                 sync.Mutex
 	draftDir           string
+	baselineDir        string
 	filePaths          map[ConfigKind][]string
 	colorsDir          string
 	bundle             Bundle
@@ -41,6 +42,7 @@ type webApp struct {
 	baselineReady      bool
 	stateAPI           StateAPI
 	store              ConfigPublisher
+	importer           *NativeYAMLStore
 	inventoryStates    map[string]LightState
 	inventoryLocations map[string]LightLocation
 	inventoryMetadata  map[string]HAEntityMetadata
@@ -197,6 +199,8 @@ type webPage struct {
 	YAMLFile       string
 	YAML           string
 	Diff           string
+	ImportReady    bool
+	ImportReason   string
 	PublishReady   bool
 	PublishReason  string
 	Lights         []webLight
@@ -244,6 +248,7 @@ func runWeb(args []string) error {
 	var client *HAClient
 	if store, storeErr := nativeStore(*sshHost, *sshUser, *haConfigDir, *haURL, os.Getenv(*tokenEnv), filePaths); storeErr == nil {
 		app.store = &store
+		app.importer = &store
 	}
 	if *haURL != "" && os.Getenv(*tokenEnv) != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -307,7 +312,7 @@ func newWebAppWithReferences(draftDir, baselineDir, referencesDir string, filePa
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("create web session: %w", err)
 	}
-	return &webApp{draftDir: draftDir, filePaths: filePaths, colorsDir: referencesDir, bundle: bundle, baseline: baseline, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != ""}, nil
+	return &webApp{draftDir: draftDir, baselineDir: baselineDir, filePaths: filePaths, colorsDir: referencesDir, bundle: bundle, baseline: baseline, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != "" && len(baseline.Files) > 0}, nil
 }
 
 func (a *webApp) handler() http.Handler {
@@ -319,6 +324,7 @@ func (a *webApp) handler() http.Handler {
 	mux.HandleFunc("POST /schedule", a.saveSchedule)
 	mux.HandleFunc("POST /color", a.saveColor)
 	mux.HandleFunc("POST /delete", a.deleteDraftItem)
+	mux.HandleFunc("POST /import", a.importDraft)
 	mux.HandleFunc("POST /publish", a.publishDraft)
 	mux.HandleFunc("POST /inventory", a.refreshInventoryPost)
 	mux.HandleFunc("POST /playback", a.controlPlayback)
@@ -532,6 +538,10 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 	}
 	page.Unpublished = a.baselineReady && len(changes) > 0
 	page.PublishReason = a.publishError
+	page.ImportReady = a.importer != nil
+	if !page.ImportReady {
+		page.ImportReason = "Import requires SSH and Home Assistant configuration."
+	}
 	if page.PublishReason == "" && len(changes) == 0 {
 		page.PublishReason = "No changes to publish."
 	}
@@ -736,6 +746,32 @@ func (a *webApp) deleteDraftItem(w http.ResponseWriter, r *http.Request) {
 			return Bundle{}, fmt.Errorf("unsupported draft item")
 		}
 	})
+}
+
+func (a *webApp) importDraft(w http.ResponseWriter, r *http.Request) {
+	a.post(w, r, "yaml", "Imported Home Assistant YAML.", false, func(_ Bundle, form url.Values) (Bundle, error) {
+		if form.Get("confirmation") != "IMPORT" {
+			return Bundle{}, fmt.Errorf("type IMPORT to confirm")
+		}
+		if a.importer == nil || a.baselineDir == "" {
+			return Bundle{}, fmt.Errorf("import is unavailable: %s", a.pageImportReason())
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		bundle, baseline, _, err := importDraft(ctx, *a.importer, a.draftDir, a.baselineDir, a.colorsDir, a.filePaths)
+		if err != nil {
+			return Bundle{}, fmt.Errorf("import failed: %w", err)
+		}
+		a.baseline, a.baselineReady, a.refs = baseline, true, bundleRefs(baseline)
+		return bundle, nil
+	})
+}
+
+func (a *webApp) pageImportReason() string {
+	if a.importer == nil {
+		return "SSH and Home Assistant configuration are required"
+	}
+	return "the baseline directory is unavailable"
 }
 
 func (a *webApp) publishDraft(w http.ResponseWriter, r *http.Request) {

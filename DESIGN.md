@@ -55,11 +55,13 @@ compiled into generated scripts.
   `data/current/ha_lightcraft.yaml` and `data/proposed/ha_lightcraft.yaml`;
   the configured `packages/` prefix is only the remote HA path. `--data DIR`
   selects the root; it defaults to `data`. Every entry in the designer-owned
-  package is imported.
+  package is imported. Web startup also accepts an empty local workspace; its
+  Publish view can run the same import flow, while publication remains disabled
+  until an imported baseline exists.
 - Migration: imports detect the legacy `holiday_lights` format and read its
   optional scene file transiently to convert it into color sequences. Scenes
   are never copied into `current` or saved as a modern draft file. Migration
-  is supported by the `import` subcommand only.
+  is supported by the CLI and web import flows.
 - Color representation: sequence steps store and publish Home Assistant
   `xy_color`; RGB is derived only for readable swatches and previews. Older
   RGB-only sequence data is converted when imported.
@@ -67,8 +69,10 @@ compiled into generated scripts.
 ## Runtime flow
 
 ```text
-HA package -> `<data>/current` -> `<data>/proposed` -> TUI edit ----> native HA projection
-                                                  \----> web edit --/
+HA package -> `<data>/current` -> `<data>/proposed` -> TUI/web edit -> native HA projection
+                 ^                         ^
+                 |                         |
+                 +------ web Import -------+
                                                             |
                                                             v
                              publish diff -> stale check -> backup -> publish -> verify
@@ -76,8 +80,11 @@ HA package -> `<data>/current` -> `<data>/proposed` -> TUI edit ----> native HA 
                                                                          rollback on error
 ```
 
-The current snapshot preserves the configured HA package path for ordinary file
-diffs while local package drafts use the flat layout described above. Web and
+An empty local workspace is a valid web starting state; the web Publish view
+offers a confirmation-protected import that refreshes both snapshots and keeps
+the existing local color catalog. The current snapshot preserves the configured
+HA package path for ordinary file diffs while local package drafts use the flat
+layout described above. Web and
 TUI edits write only to `<data>/proposed`;
 `<data>/current` is the comparison baseline. The web editor keeps one
 in-memory draft behind a mutex. Mutation requests use

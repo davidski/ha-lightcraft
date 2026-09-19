@@ -109,6 +109,8 @@ type NativeYAMLStore struct {
 	Reload    func(context.Context, []ConfigKind) error
 }
 
+var errNoNativeYAML = errors.New("no native HA YAML files")
+
 func (s NativeYAMLStore) packageFile() (string, bool) {
 	relative, ok := packagePath(s.FilePaths)
 	if !ok {
@@ -144,7 +146,7 @@ func (s NativeYAMLStore) readFull(ctx context.Context) (Bundle, map[ConfigKind][
 	if path, ok := s.packageFile(); ok {
 		data, err := s.Transport.ReadFile(ctx, path)
 		if errors.Is(err, os.ErrNotExist) {
-			return Bundle{}, nil, fmt.Errorf("no native HA YAML files found in %s", s.ConfigDir)
+			return Bundle{}, nil, fmt.Errorf("%w found in %s", errNoNativeYAML, s.ConfigDir)
 		}
 		if err != nil {
 			return Bundle{}, nil, fmt.Errorf("read %s: %w", path, err)
@@ -196,7 +198,7 @@ func (s NativeYAMLStore) readFull(ctx context.Context) (Bundle, map[ConfigKind][
 		}
 	}
 	if len(bundle.Files) == 0 {
-		return Bundle{}, nil, fmt.Errorf("no native HA YAML files found in %s", s.ConfigDir)
+		return Bundle{}, nil, fmt.Errorf("%w found in %s", errNoNativeYAML, s.ConfigDir)
 	}
 	bundle, err := withHash(bundle)
 	return bundle, raw, err
@@ -289,6 +291,27 @@ func importedBundleWithLegacyUpgrade(ctx context.Context, store NativeYAMLStore,
 		}
 	}
 	return bundle, nil
+}
+
+func importDraft(ctx context.Context, store NativeYAMLStore, proposedDir, currentDir, colorsDir string, filePaths map[ConfigKind][]string) (Bundle, Bundle, bool, error) {
+	full, err := store.Pull(ctx, currentDir)
+	if err != nil {
+		return Bundle{}, Bundle{}, false, err
+	}
+	legacyDetected := legacyLightingDetected(full)
+	bundle, err := importedBundleWithLegacyUpgrade(ctx, store, full, nil)
+	if err != nil {
+		return Bundle{}, Bundle{}, false, err
+	}
+	if existing, err := LoadBundleAtWithReferences(proposedDir, colorsDir, filePaths); err == nil {
+		if colors, ok := existing.Files[Colors]; ok {
+			bundle.Files[Colors] = colors
+		}
+	}
+	if err := SaveBundleAtWithReferences(proposedDir, colorsDir, bundle, filePaths); err != nil {
+		return Bundle{}, Bundle{}, false, err
+	}
+	return bundle, full, legacyDetected, nil
 }
 
 // Pull copies the configured native files to a local source snapshot and

@@ -82,29 +82,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, "--source and --data must be separate directories")
 			os.Exit(1)
 		}
-		var bundle Bundle
 		store, storeErr := nativeStore(*sshHost, *sshUser, *haConfigDir, *haURL, os.Getenv(*tokenEnv), filePaths)
 		if storeErr != nil {
 			fmt.Fprintln(os.Stderr, storeErr)
 			os.Exit(1)
 		}
-		full, err := store.Pull(context.Background(), *source)
+		bundle, _, legacyDetected, err := importDraft(context.Background(), store, *draft, *source, colorsDir, filePaths)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		legacyDetected := legacyLightingDetected(full)
-		bundle, err = importedBundleWithLegacyUpgrade(context.Background(), store, full, nil)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		if existing, err := LoadBundleAtWithReferences(*draft, colorsDir, filePaths); err == nil {
-			if colors, ok := existing.Files[Colors]; ok {
-				bundle.Files[Colors] = colors
-			}
-		}
-		if err := SaveBundleAtWithReferences(*draft, colorsDir, bundle, filePaths); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

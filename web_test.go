@@ -124,6 +124,52 @@ func TestWebLegacyViewAliases(t *testing.T) {
 	}
 }
 
+func TestWebStartsEmptyAndImportsHomeAssistantYAML(t *testing.T) {
+	draftDir := t.TempDir()
+	baselineDir := t.TempDir()
+	colorsDir := t.TempDir()
+	remoteDir := t.TempDir()
+	paths := map[ConfigKind][]string{
+		Scripts:     {"packages/ha_lightcraft.yaml"},
+		Automations: {"packages/ha_lightcraft.yaml"},
+		Helpers:     {"packages/ha_lightcraft.yaml"},
+	}
+	writeNestedNative(t, remoteDir, "packages/ha_lightcraft.yaml", "automation: []\ninput_select: {}\nscript: {}\n")
+
+	app, err := newWebAppWithReferences(draftDir, baselineDir, colorsDir, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.baselineReady || len(app.bundle.Files) != 0 {
+		t.Fatalf("empty web app was marked ready: baseline=%v bundle=%#v", app.baselineReady, app.bundle)
+	}
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: remoteDir}, ConfigDir: ".", FilePaths: paths}
+	app.importer = &store
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/?view=publish", nil)
+	request.Host = "127.0.0.1:8080"
+	app.handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Type IMPORT to confirm") {
+		t.Fatalf("empty web import form = %d %s", response.Code, response.Body.String())
+	}
+
+	postForm(t, app.handler(), "/import", url.Values{
+		"token":        {app.token},
+		"hash":         {app.bundle.Hash},
+		"confirmation": {"IMPORT"},
+	}, http.StatusSeeOther)
+	if !app.baselineReady || len(app.bundle.Files) != 3 {
+		t.Fatalf("import did not initialize web state: baseline=%v bundle=%#v", app.baselineReady, app.bundle)
+	}
+	if _, err := LoadBundleAt(baselineDir, paths); err != nil {
+		t.Fatalf("imported baseline missing: %v", err)
+	}
+	if _, err := LoadBundleAt(draftDir, paths); err != nil {
+		t.Fatalf("imported draft missing: %v", err)
+	}
+}
+
 func TestWebStatusShowsPublishedChanges(t *testing.T) {
 	dir := t.TempDir()
 	baselineDir := t.TempDir()

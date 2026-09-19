@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,12 @@ var fileKinds = map[string]ConfigKind{
 	"automations.yaml":  Automations,
 	"input_select.yaml": Helpers,
 	"colors.yaml":       Colors,
+}
+
+var errNoSupportedYAML = errors.New("no supported YAML files")
+
+func emptyBundle() (Bundle, error) {
+	return withHash(Bundle{Files: map[ConfigKind]Config{}})
 }
 
 func LoadBundle(dir string) (Bundle, error) {
@@ -36,7 +43,7 @@ func LoadBundle(dir string) (Bundle, error) {
 		bundle.Files[kind] = Config{Kind: kind, Data: normalizeYAML(value)}
 	}
 	if len(bundle.Files) == 0 {
-		return Bundle{}, fmt.Errorf("no supported YAML files in %s", dir)
+		return Bundle{}, fmt.Errorf("%w in %s", errNoSupportedYAML, dir)
 	}
 	if source, err := os.ReadFile(filepath.Join(dir, ".ha-source-hash")); err == nil {
 		bundle.SourceHash = string(source)
@@ -52,12 +59,23 @@ func LoadBundleAt(dir string, filePaths map[ConfigKind][]string) (Bundle, error)
 
 func LoadBundleAtWithReferences(dir, colorsDir string, filePaths map[ConfigKind][]string) (Bundle, error) {
 	if len(filePaths) == 0 {
-		return LoadBundle(dir)
+		bundle, err := LoadBundle(dir)
+		if errors.Is(err, errNoSupportedYAML) {
+			return emptyBundle()
+		}
+		return bundle, err
 	}
 	localPaths := localFilePaths(filePaths)
 	native, err := (NativeYAMLStore{Transport: LocalFileTransport{Root: dir}, ConfigDir: ".", FilePaths: localPaths}).ReadAll(context.Background())
 	if err != nil {
-		return LoadBundle(dir)
+		legacy, legacyErr := LoadBundle(dir)
+		if legacyErr == nil {
+			return legacy, nil
+		}
+		if errors.Is(err, errNoNativeYAML) && errors.Is(legacyErr, errNoSupportedYAML) {
+			return emptyBundle()
+		}
+		return Bundle{}, legacyErr
 	}
 	colors, ok, err := loadColors(colorsDir)
 	if err != nil {
@@ -91,7 +109,11 @@ func loadBaselineBundle(dir string, filePaths map[ConfigKind][]string) (Bundle, 
 			return bundle, nil
 		}
 	}
-	return LoadBundle(dir)
+	bundle, err := LoadBundle(dir)
+	if errors.Is(err, errNoSupportedYAML) {
+		return emptyBundle()
+	}
+	return bundle, err
 }
 
 func SaveBundle(dir string, bundle Bundle) error {

@@ -35,9 +35,9 @@ Create the host-side data and backup directories:
 mkdir -p data backups
 ```
 
-### 2. Import Home Assistant files
+### 2. Initialize Home Assistant files
 
-Run the import:
+The CLI import initializes the local baseline and editable draft:
 
 ```sh
 docker compose run --rm ha-lightcraft import
@@ -45,6 +45,9 @@ docker compose run --rm ha-lightcraft import
 
 This writes the current in-use version to `data/current/ha_lightcraft.yaml` and
 creates the editable version at `data/proposed/ha_lightcraft.yaml`.
+
+The web editor can also start with an empty data directory. Open its Publish
+view and use **Import from Home Assistant** to perform the same initialization.
 
 ### 3. Edit in the TUI or web editor
 
