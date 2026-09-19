@@ -35,6 +35,33 @@ func lightGroupMembers(state LightState) []string {
 	return nil
 }
 
+func lightTargetSupportsColor(id string, states map[string]LightState) bool {
+	visiting := map[string]bool{}
+	var supportsTarget func(string) bool
+	supportsTarget = func(id string) bool {
+		if visiting[id] {
+			return false
+		}
+		state, ok := states[id]
+		if !ok {
+			return false
+		}
+		members := lightGroupMembers(state)
+		if len(members) == 0 {
+			return lightSupportsColor(state)
+		}
+		visiting[id] = true
+		defer delete(visiting, id)
+		for _, member := range members {
+			if !supportsTarget(member) {
+				return false
+			}
+		}
+		return true
+	}
+	return supportsTarget(id)
+}
+
 func lightTypeLabel(state LightState) string {
 	if lightIsGroup(state) {
 		return "group"
@@ -46,7 +73,7 @@ func colorLightIDs(states map[string]LightState, locations map[string]LightLocat
 	ids := inventoryIDs(states, locations)
 	result := make([]string, 0, len(ids))
 	for _, id := range ids {
-		if lightSupportsColor(states[id]) {
+		if lightTargetSupportsColor(id, states) {
 			result = append(result, id)
 		}
 	}

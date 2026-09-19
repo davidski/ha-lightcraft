@@ -619,8 +619,10 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 		t.Fatal(err)
 	}
 	api := &webTestStateAPI{states: map[string]LightState{
-		"light.one": {EntityID: "light.one", State: "off", Attribute: map[string]any{"friendly_name": "One", "supported_color_modes": []any{"xy"}}},
-		"light.two": {EntityID: "light.two", State: "on", Attribute: map[string]any{"friendly_name": "Two", "brightness": 80, "supported_color_modes": []any{"rgb"}, "entity_id": []any{"light.two_left", "light.two_right"}}},
+		"light.one":       {EntityID: "light.one", State: "off", Attribute: map[string]any{"friendly_name": "One", "supported_color_modes": []any{"xy"}}},
+		"light.two":       {EntityID: "light.two", State: "on", Attribute: map[string]any{"friendly_name": "Two", "brightness": 80, "supported_color_modes": []any{"rgb"}, "entity_id": []any{"light.two_left", "light.two_right"}}},
+		"light.two_left":  {EntityID: "light.two_left", State: "on", Attribute: map[string]any{"supported_color_modes": []any{"rgb"}}},
+		"light.two_right": {EntityID: "light.two_right", State: "on", Attribute: map[string]any{"supported_color_modes": []any{"rgb"}}},
 	}}
 	app.stateAPI = api
 	app.refreshInventory(context.Background())

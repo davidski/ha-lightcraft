@@ -537,7 +537,7 @@ func resolveLightingTargets(targets []string, states map[string]LightState) ([]s
 			return fmt.Errorf("light %s was not found in Home Assistant", id)
 		}
 		visiting[id] = true
-		if members := stringList(state.Attribute["entity_id"]); len(members) > 0 {
+		if members := lightGroupMembers(state); len(members) > 0 {
 			for _, member := range members {
 				if err := add(member); err != nil {
 					return err

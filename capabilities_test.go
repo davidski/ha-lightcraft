@@ -14,6 +14,19 @@ func TestLightIsGroupUsesHAAndZigbee2MQTTAttributes(t *testing.T) {
 	}
 }
 
+func TestColorLightIDsFilterGroupsWithNonColorMembers(t *testing.T) {
+	states := map[string]LightState{
+		"light.good":   {Attribute: map[string]any{"supported_color_modes": []any{"xy"}}},
+		"light.bad":    {Attribute: map[string]any{"supported_color_modes": []any{"onoff"}}},
+		"light.group":  {Attribute: map[string]any{"supported_color_modes": []any{"rgb"}, "entity_id": []any{"light.good", "light.bad"}}},
+		"light.nested": {Attribute: map[string]any{"group_entities": []any{"light.good"}}},
+	}
+	ids := colorLightIDs(states, nil)
+	if stringMustJSON(ids) != stringMustJSON([]string{"light.good", "light.nested"}) {
+		t.Fatalf("color light IDs = %v", ids)
+	}
+}
+
 func TestWLEDInventoryFiltersByRegistryRelationship(t *testing.T) {
 	states := map[string]LightState{
 		"light.floating":              {EntityID: "light.floating", State: "on", Attribute: map[string]any{"supported_color_modes": []any{"rgb"}}},
