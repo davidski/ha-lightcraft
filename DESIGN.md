@@ -85,9 +85,10 @@ HA package -> `<data>/current` -> `<data>/proposed` -> TUI/web edit -> native HA
                                                                          rollback on error
 ```
 
-An empty local workspace is a valid web starting state; the web Publish view
-offers an import that refreshes both snapshots and keeps
-the existing local color catalog. The web host guard allows loopback by default
+An empty local workspace is a valid web starting state; the web Home Assistant
+view offers an import that refreshes both snapshots and merges colors from
+Home Assistant into the local catalog, with imported values winning on matching
+IDs while local-only colors remain. The web host guard allows loopback by default
 and exact configured public hosts through `WEB_ALLOWED_HOSTS`, while rejecting
 other hostnames. Import requires confirmation when replacing proposed native
 HA files, but an empty proposed workspace can be initialized directly. The

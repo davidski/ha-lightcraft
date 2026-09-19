@@ -336,10 +336,15 @@ func importDraft(ctx context.Context, store NativeYAMLStore, proposedDir, curren
 	if err != nil {
 		return Bundle{}, Bundle{}, false, err
 	}
-	if existing, err := LoadBundleAtWithReferences(proposedDir, colorsDir, filePaths); err == nil {
-		if colors, ok := existing.Files[Colors]; ok {
-			bundle.Files[Colors] = colors
-		}
+	imported := bundle
+	if colors, ok, err := loadColors(colorsDir); err != nil {
+		return Bundle{}, Bundle{}, false, err
+	} else if ok {
+		bundle.Files[Colors] = colors
+	}
+	bundle, err = mergeImportedColorCatalog(bundle, imported)
+	if err != nil {
+		return Bundle{}, Bundle{}, false, fmt.Errorf("merge imported color catalog: %w", err)
 	}
 	if err := SaveBundleAtWithReferences(proposedDir, colorsDir, bundle, filePaths); err != nil {
 		return Bundle{}, Bundle{}, false, err

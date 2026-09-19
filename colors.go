@@ -110,6 +110,62 @@ func materializeNativeBundle(bundle Bundle) Bundle {
 	return result
 }
 
+func mergeImportedColorCatalog(bundle, imported Bundle) (Bundle, error) {
+	importedValues := sequenceColorCatalog(imported)
+	if len(importedValues) == 0 {
+		return bundle, nil
+	}
+	result, err := cloneBundle(bundle)
+	if err != nil {
+		return Bundle{}, err
+	}
+	values := map[string]any{}
+	if existing, ok := result.Files[Colors].Data.(map[string]any); ok {
+		values = existing
+	}
+	for id, value := range importedValues {
+		values[id] = value
+	}
+	result.Files[Colors] = Config{Kind: Colors, Data: values}
+	return withHash(result)
+}
+
+func sequenceColorCatalog(bundle Bundle) map[string]any {
+	sequences := colorSequences(bundle)
+	sequenceIDs := make([]string, 0, len(sequences))
+	for id := range sequences {
+		sequenceIDs = append(sequenceIDs, id)
+	}
+	sortedStrings(sequenceIDs)
+
+	values := map[string]any{}
+	for _, sequenceID := range sequenceIDs {
+		for _, step := range sequences[sequenceID].Steps {
+			if len(step.XY) != 2 || step.Name == "" || step.XY[0] < 0 || step.XY[1] <= 0 || step.XY[0]+step.XY[1] > 1 {
+				continue
+			}
+			id := colorID(step.Name)
+			if id == "" {
+				continue
+			}
+			if existing, ok := values[id].(map[string]any); ok && existing["name"] == step.Name && number(existing["x"]) == normalizeXY(step.XY[0]) && number(existing["y"]) == normalizeXY(step.XY[1]) {
+				continue
+			}
+			if _, exists := values[id]; exists {
+				for n := 2; ; n++ {
+					candidate := fmt.Sprintf("%s_%d", id, n)
+					if _, exists := values[candidate]; !exists {
+						id = candidate
+						break
+					}
+				}
+			}
+			values[id] = map[string]any{"name": step.Name, "x": normalizeXY(step.XY[0]), "y": normalizeXY(step.XY[1])}
+		}
+	}
+	return values
+}
+
 func hsToXY(hue, saturation float64) [2]float64 {
 	h := math.Mod(hue, 360) / 60
 	c := saturation / 100

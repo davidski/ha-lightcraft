@@ -217,6 +217,71 @@ func TestNativeYAMLPullReportsMissingRemotePackagePath(t *testing.T) {
 	}
 }
 
+func TestImportDraftCreatesColorsFromImportedSequences(t *testing.T) {
+	remote := t.TempDir()
+	proposed := t.TempDir()
+	current := t.TempDir()
+	colorsDir := t.TempDir()
+	paths := map[ConfigKind][]string{
+		Scripts:     {"packages/ha_lightcraft.yaml"},
+		Automations: {"packages/ha_lightcraft.yaml"},
+		Helpers:     {"packages/ha_lightcraft.yaml"},
+	}
+	writeNestedNative(t, remote, "packages/ha_lightcraft.yaml", `automation: []
+input_select: {}
+script:
+  lighting_sequence_christmas:
+    alias: Christmas
+    variables:
+      sequence_data:
+        repeat: true
+        steps:
+          - name: Red
+            xy: [0.64, 0.33]
+            brightness: 255
+            hold: 6
+            transition: 0.5
+          - name: Red
+            xy: [0.64, 0.33]
+            brightness: 200
+            hold: 3
+            transition: 0
+`)
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: remote}, ConfigDir: ".", FilePaths: paths}
+	bundle, _, _, err := importDraft(context.Background(), store, proposed, current, colorsDir, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	colors := colorDefinitions(bundle)
+	if len(colors) != 1 || colors["red"].Name != "Red" || colors["red"].X != .64 || colors["red"].Y != .33 {
+		t.Fatalf("colors = %#v", colors)
+	}
+	if _, err := os.Stat(filepath.Join(colorsDir, "colors.yaml")); err != nil {
+		t.Fatalf("colors.yaml was not created: %v", err)
+	}
+}
+
+func TestMergeImportedColorsOverridesLocalCatalog(t *testing.T) {
+	local := Bundle{Files: map[ConfigKind]Config{Colors: {Kind: Colors, Data: map[string]any{
+		"red":  map[string]any{"name": "Red", "x": .1, "y": .1},
+		"blue": map[string]any{"name": "Blue", "x": .15, "y": .06},
+	}}}}
+	imported, err := saveColorSequence(Bundle{}, ColorSequence{Name: "Christmas", ID: "christmas", Steps: []ColorStep{
+		{Name: "Red", XY: []float64{.64, .33}, Brightness: 255, Hold: 6},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged, err := mergeImportedColorCatalog(local, imported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	colors := colorDefinitions(merged)
+	if len(colors) != 2 || colors["red"].X != .64 || colors["red"].Y != .33 || colors["blue"].X != .15 {
+		t.Fatalf("colors = %#v", colors)
+	}
+}
+
 func TestNativeYAMLPublishPreservesUnrelatedEntries(t *testing.T) {
 	dir := t.TempDir()
 	writeNative(t, dir, "automations.yaml", "- id: keep\n  name: Old\n  entities: {}\n- id: other\n  name: Preserve\n  entities: {}\n")

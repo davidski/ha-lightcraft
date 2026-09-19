@@ -337,7 +337,7 @@ func TestWebYAMLUsesOnePackageEntryAndDiff(t *testing.T) {
 	request.Host = "127.0.0.1:8080"
 	app.handler().ServeHTTP(response, request)
 	body := response.Body.String()
-	if response.Code != http.StatusOK || strings.Contains(body, "Home Assistant files") || strings.Contains(body, `<div class="grid"><section class="panel"><h2>Unified diff:`) || strings.Count(body, `class="panel yaml-file"`) != 1 || strings.Count(body, `class="panel yaml-diff"`) != 1 || !strings.Contains(body, `class="panel yaml-file"><h2>File to publish</h2>`) || !strings.Contains(body, `class="panel yaml-diff"><h2>Changes to publish</h2>`) || !strings.Contains(body, `.yaml-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}`) || !strings.Contains(body, "alias: Changed") || strings.Contains(body, "Save draft") || strings.Contains(body, "Save draft files") || !strings.Contains(body, ">Publish</a>") {
+	if response.Code != http.StatusOK || strings.Contains(body, "Home Assistant files") || strings.Contains(body, `<div class="grid"><section class="panel"><h2>Unified diff:`) || strings.Count(body, `class="panel yaml-file"`) != 1 || strings.Count(body, `class="panel yaml-diff"`) != 1 || !strings.Contains(body, `class="panel yaml-file"><h2>File to publish</h2>`) || !strings.Contains(body, `class="panel yaml-diff"><h2>Changes to publish</h2>`) || !strings.Contains(body, `.yaml-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}`) || !strings.Contains(body, "alias: Changed") || strings.Contains(body, "Save draft") || strings.Contains(body, "Save draft files") || !strings.Contains(body, ">Home Assistant</a>") {
 		t.Fatalf("web package YAML = %d %s", response.Code, body)
 	}
 }
@@ -360,7 +360,7 @@ func TestWebDraftEditPersists(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.Host = "127.0.0.1:8080"
 	handler.ServeHTTP(response, request)
-	if body := response.Body.String(); !strings.Contains(body, `<a href="/?view=colors" class="active">Colors</a>`) || !strings.Contains(body, `<link rel="icon" href="/favicon.png" type="image/png">`) || !strings.Contains(body, `<img class="brand-icon" src="/favicon.png" alt="">`) {
+	if body := response.Body.String(); !strings.Contains(body, `<a href="/?view=colors" class="active">Colors</a>`) || !strings.Contains(body, `<link rel="preload" href="/favicon.png" as="image" type="image/png" fetchpriority="high">`) || !strings.Contains(body, `<link rel="icon" href="/favicon.png" type="image/png">`) || !strings.Contains(body, `<img class="brand-icon" src="/favicon.png" alt="">`) {
 		t.Fatalf("default web view is not Colors: %s", body)
 	}
 	response = httptest.NewRecorder()
@@ -377,7 +377,7 @@ func TestWebDraftEditPersists(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	body := response.Body.String()
 	wantHex := cieRGBHex(CIEColor{X: .64, Y: .33})
-	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(body, "scrollbar-gutter:stable") || !strings.Contains(body, ">Publish</a>") || !strings.Contains(body, ">Inventory</a>") || !strings.Contains(body, `.nav-divider{width:1px;align-self:stretch;`) || !strings.Contains(body, `class="nav-divider"`) || strings.Contains(body, ">YAML / Diff</a>") || !strings.Contains(body, "Red") || !strings.Contains(body, `name="display_name" autocomplete="off"`) || strings.Contains(body, `name="name"`) || !strings.Contains(body, `type="color" value="`+wantHex+`"`) || !strings.Contains(body, "setColorXY") || !strings.Contains(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:8px"`) || strings.Index(body, `view=colors`) > strings.Index(body, `view=sequences`) || strings.Index(body, `view=sequences`) > strings.Index(body, `view=schedules`) || strings.Index(body, `view=schedules`) > strings.Index(body, `view=inventory`) {
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(body, "scrollbar-gutter:stable") || !strings.Contains(body, ">Home Assistant</a>") || !strings.Contains(body, ">Inventory</a>") || !strings.Contains(body, `.nav-divider{width:1px;align-self:stretch;`) || !strings.Contains(body, `class="nav-divider"`) || strings.Contains(body, ">YAML / Diff</a>") || !strings.Contains(body, "Red") || !strings.Contains(body, `name="display_name" autocomplete="off"`) || strings.Contains(body, `name="name"`) || !strings.Contains(body, `type="color" value="`+wantHex+`"`) || !strings.Contains(body, "setColorXY") || !strings.Contains(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:8px"`) || strings.Index(body, `view=colors`) > strings.Index(body, `view=sequences`) || strings.Index(body, `view=sequences`) > strings.Index(body, `view=schedules`) || strings.Index(body, `view=schedules`) > strings.Index(body, `view=inventory`) {
 		t.Fatalf("unexpected color page: %d %s", response.Code, response.Body.String())
 	}
 	if !strings.Contains(body, `.grid > .panel:first-child > .button{order:1`) || !strings.Contains(body, `.grid > .panel:first-child > .button{width:max-content;max-width:100%}`) || !strings.Contains(body, `.grid > .panel:first-child > .items{order:2}`) {

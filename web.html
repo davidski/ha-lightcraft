@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HA Lightcraft</title>
+<link rel="preload" href="/favicon.png" as="image" type="image/png" fetchpriority="high">
 <link rel="icon" href="/favicon.png" type="image/png">
 <style>
 html{scrollbar-gutter:stable}
@@ -25,7 +26,7 @@ input[type=color]{height:52px;padding:4px;cursor:pointer;border-radius:5px}
 <a href="/?view=sequences" class="{{if eq .View "sequences"}}active{{end}}">Sequences</a>
 <a href="/?view=schedules" class="{{if eq .View "schedules"}}active{{end}}">Schedules</a>
 <a href="/?view=agenda" class="{{if eq .View "agenda"}}active{{end}}">Agenda</a>
-<a href="/?view=publish" class="{{if eq .View "yaml"}}active{{end}}">Publish</a>
+<a href="/?view=publish" class="{{if eq .View "yaml"}}active{{end}}">Home Assistant</a>
 <span class="nav-divider" aria-hidden="true"></span>
 <a href="/?view=inventory" class="utility-nav {{if eq .View "lights"}}active{{end}}">Inventory</a>
 </nav></header>

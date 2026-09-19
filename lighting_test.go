@@ -413,10 +413,10 @@ func TestDashboardWorkspaceOrderAndLabels(t *testing.T) {
 		t.Fatalf("default workspace = %d, want Colors (2)", workspaceAt(0))
 	}
 	view := (statusModel{bundle: testLightingBundle(t), dashboardWorkspace: 2}).renderDashboard()
-	if strings.Index(view, "Colors") > strings.Index(view, "Sequences") || strings.Index(view, "Sequences") > strings.Index(view, "Schedules") || strings.Index(view, "Schedules") > strings.Index(view, "Publish") {
+	if strings.Index(view, "Colors") > strings.Index(view, "Sequences") || strings.Index(view, "Sequences") > strings.Index(view, "Schedules") || strings.Index(view, "Schedules") > strings.Index(view, "Home Assistant") {
 		t.Fatalf("workspace order is wrong: %s", view)
 	}
-	if strings.Contains(view, "1 Colors") || strings.Contains(view, "2 Sequences") || strings.Contains(view, "3 Schedules") || strings.Contains(view, "4 Publish") {
+	if strings.Contains(view, "1 Colors") || strings.Contains(view, "2 Sequences") || strings.Contains(view, "3 Schedules") || strings.Contains(view, "4 Home Assistant") {
 		t.Fatalf("workspace tabs still show number labels: %s", view)
 	}
 }

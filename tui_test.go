@@ -139,7 +139,7 @@ func TestStatusViewShowsMessage(t *testing.T) {
 
 func TestDashboardShowsWorkflowAndSeparateInventory(t *testing.T) {
 	view := (statusModel{width: 100, height: 24}).renderDashboard()
-	for _, want := range []string{"WORKFLOW", "Colors → Sequences → Schedules → Agenda → Publish", "Inventory", "EDIT WORKSPACES", "i inventory"} {
+	for _, want := range []string{"WORKFLOW", "Colors → Sequences → Schedules → Agenda → Home Assistant", "Inventory", "EDIT WORKSPACES", "i inventory"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("dashboard omitted %q: %s", want, view)
 		}

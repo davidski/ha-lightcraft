@@ -923,7 +923,7 @@ func (m statusModel) renderDashboard() string {
 		{"Colors", len(colorIDs(m.bundle))},
 		{"Sequences", len(colorSequences(m.bundle))},
 		{"Schedules", len(lightingAssignments(m.bundle))},
-		{"Publish", 0},
+		{"Home Assistant", 0},
 	}
 	var tabs strings.Builder
 	for i, workspace := range workspaces {
@@ -940,7 +940,7 @@ func (m statusModel) renderDashboard() string {
 			tabs.WriteString("   ")
 		}
 	}
-	workflowBar := sectionStyle.Render("WORKFLOW") + "  " + mutedStyle.Render("Colors → Sequences → Schedules → Agenda → Publish") + "  " + borderStyle.Render("│") + "  " + mutedStyle.Render("Inventory")
+	workflowBar := sectionStyle.Render("WORKFLOW") + "  " + mutedStyle.Render("Colors → Sequences → Schedules → Agenda → Home Assistant") + "  " + borderStyle.Render("│") + "  " + mutedStyle.Render("Inventory")
 	workspaceBar := sectionStyle.Render("EDIT WORKSPACES") + "  " + tabs.String()
 	content := m.renderDashboardWorkspace(width)
 
