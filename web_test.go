@@ -337,7 +337,7 @@ func TestWebYAMLUsesOnePackageEntryAndDiff(t *testing.T) {
 	request.Host = "127.0.0.1:8080"
 	app.handler().ServeHTTP(response, request)
 	body := response.Body.String()
-	if response.Code != http.StatusOK || strings.Contains(body, "Home Assistant files") || strings.Contains(body, `<div class="grid"><section class="panel"><h2>Unified diff:`) || strings.Count(body, `class="panel yaml-file"`) != 1 || strings.Count(body, `class="panel yaml-diff"`) != 1 || !strings.Contains(body, `class="panel yaml-file"><h2>File to publish</h2>`) || !strings.Contains(body, `class="panel yaml-diff"><h2>Changes to publish</h2>`) || !strings.Contains(body, `.yaml-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}`) || !strings.Contains(body, "alias: Changed") || strings.Contains(body, "Save draft") || strings.Contains(body, "Save draft files") || !strings.Contains(body, ">Home Assistant</a>") {
+	if response.Code != http.StatusOK || strings.Contains(body, "Home Assistant files") || strings.Contains(body, `<div class="grid"><section class="panel"><h2>Unified diff:`) || strings.Count(body, `class="panel yaml-file"`) != 1 || strings.Count(body, `class="panel yaml-diff"`) != 1 || !strings.Contains(body, `class="panel yaml-file"><h2>Proposed package</h2>`) || !strings.Contains(body, `class="panel yaml-diff"><h2>Changes to publish</h2>`) || !strings.Contains(body, `.yaml-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}`) || !strings.Contains(body, "alias: Changed") || strings.Contains(body, "Save draft") || strings.Contains(body, "Save draft files") || !strings.Contains(body, ">Home Assistant</a>") {
 		t.Fatalf("web package YAML = %d %s", response.Code, body)
 	}
 }
