@@ -13,8 +13,9 @@ compiled into generated scripts.
 
 - Language: Go; one small executable, fast startup, simple distribution.
 - UI: Bubble Tea TUI plus a server-rendered local web editor. The web command
-  uses Go's standard HTTP and template packages, binds only to loopback, and
-  renders each view directly from its final template, without rewriting
+  uses Go's standard HTTP and template packages, binds to `127.0.0.1` by
+  default, and requires an explicit `--listen` override for other interfaces.
+  It renders each view directly from its final template, without rewriting
   rendered panels. It adds no browser-side framework or production runtime.
   When fronted by a
   reverse proxy, it accepts a validated `X-Forwarded-Prefix` while the proxy

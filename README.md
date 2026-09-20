@@ -77,6 +77,8 @@ inventory, with existing draft references retained while offline. It can pause
 or resume published schedules, lists the configured Home Assistant package
 beside its full contents and publish changes.
 
+Use `web --listen ADDRESS` to intentionally bind another address.
+
 ## Running the application
 
 ### Supported environment variables:

@@ -228,7 +228,7 @@ func runWeb(args []string) error {
 	sshUser := flags.String("ssh-user", os.Getenv("HOMEASSISTANT_SSH_USER"), "SSH user for native HA YAML")
 	haConfigDir := flags.String("ha-config-dir", os.Getenv("HOMEASSISTANT_CONFIG_DIR"), "remote Home Assistant configuration directory")
 	port := flags.Int("port", 8080, "local web server port")
-	host := flags.String("host", "127.0.0.1", "web listen address")
+	listen := flags.String("listen", "127.0.0.1", "web listen address")
 	open := flags.Bool("open", false, "open the web interface in a browser")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -277,7 +277,7 @@ func runWeb(args []string) error {
 	if client != nil {
 		defer func() { _ = client.Close() }()
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(*host, strconv.Itoa(*port)))
+	listener, err := net.Listen("tcp", net.JoinHostPort(*listen, strconv.Itoa(*port)))
 	if err != nil {
 		return fmt.Errorf("start web server: %w", err)
 	}
