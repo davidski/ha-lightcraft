@@ -140,8 +140,12 @@ transiently; they do not create WLED programs or copy scenes into the modern
 data tree. Native YAML import, diff, and publish continue to use the configured
 HA package path and guarded publisher.
 
-The web Publish workspace shows the configured Home Assistant package in full
-beside its publish changes. There is no file picker or separate in-memory save
+The web Home Assistant workspace leads with local publish status and a summary
+of added, updated, or removed sequences and schedules. Package changes appear
+in an initially open, full-width disclosure only when present; generated YAML
+is collapsed by default. Local status does not claim the live HA state is in
+sync. Import is a separate lower section whose disclosure reveals the existing
+replacement confirmation. There is no file picker or separate in-memory save
 step: editor updates persist to the proposed draft immediately. The local color
 catalog remains outside that view and is edited through the Colors workspace.
 

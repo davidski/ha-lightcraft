@@ -337,8 +337,45 @@ func TestWebYAMLUsesOnePackageEntryAndDiff(t *testing.T) {
 	request.Host = "127.0.0.1:8080"
 	app.handler().ServeHTTP(response, request)
 	body := response.Body.String()
-	if response.Code != http.StatusOK || strings.Contains(body, "Home Assistant files") || strings.Contains(body, `<div class="grid"><section class="panel"><h2>Unified diff:`) || strings.Count(body, `class="panel yaml-file"`) != 1 || strings.Count(body, `class="panel yaml-diff"`) != 1 || !strings.Contains(body, `class="panel yaml-file"><h2>Proposed package</h2>`) || !strings.Contains(body, `class="panel yaml-diff"><h2>Changes to publish</h2>`) || !strings.Contains(body, `.yaml-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:20px}`) || !strings.Contains(body, "alias: Changed") || strings.Contains(body, "Save draft") || strings.Contains(body, "Save draft files") || !strings.Contains(body, ">Home Assistant</a>") {
+	if response.Code != http.StatusOK || strings.Count(body, `<details class="panel yaml-file"><summary>View generated YAML</summary>`) != 1 || strings.Count(body, `<details class="panel yaml-diff" open><summary>View changes</summary>`) != 1 || !strings.Contains(body, "Home Assistant package changes ready for review.") || !strings.Contains(body, "alias: Changed") || strings.Contains(body, "Save draft") || !strings.Contains(body, ">Home Assistant</a>") {
 		t.Fatalf("web package YAML = %d %s", response.Code, body)
+	}
+	app.bundle = app.baseline
+	app.importer = &NativeYAMLStore{}
+	response = httptest.NewRecorder()
+	app.handler().ServeHTTP(response, request)
+	body = response.Body.String()
+	for _, want := range []string{"No local changes to publish.", "<button disabled>Publish changes</button>", `<details class="panel yaml-file"><summary>View generated YAML</summary>`, `<details class="import-action"><summary>Import…</summary>`, `required pattern="IMPORT"`, "Existing local colors are retained."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("clean publish view missing %q", want)
+		}
+	}
+	if strings.Contains(body, `class="panel yaml-diff"`) || strings.Index(body, `class="import-action"`) < strings.Index(body, `class="panel yaml-file"`) {
+		t.Fatal("clean view should hide the diff and place import below YAML")
+	}
+}
+
+func TestWebPublishSummary(t *testing.T) {
+	baseline := Bundle{Files: map[ConfigKind]Config{Scripts: {Kind: Scripts, Data: map[string]any{
+		sequencePrefix + "updated":   map[string]any{"alias": "Old"},
+		sequencePrefix + "removed":   map[string]any{"alias": "Removed"},
+		assignmentPrefix + "updated": map[string]any{"alias": "Old"},
+		assignmentPrefix + "removed": map[string]any{"alias": "Removed"},
+	}}}}
+	draft := Bundle{Files: map[ConfigKind]Config{Scripts: {Kind: Scripts, Data: map[string]any{
+		sequencePrefix + "updated":   map[string]any{"alias": "New"},
+		sequencePrefix + "added1":    map[string]any{"alias": "Added"},
+		sequencePrefix + "added2":    map[string]any{"alias": "Added"},
+		assignmentPrefix + "updated": map[string]any{"alias": "New"},
+		assignmentPrefix + "added":   map[string]any{"alias": "Added"},
+		"lighting_assignments":       map[string]any{"alias": "Generated controller"},
+	}}}}
+	want := "2 sequences added · 1 sequence updated · 1 sequence removed · 1 schedule added · 1 schedule updated · 1 schedule removed"
+	if got := webPublishSummary(baseline, draft); got != want {
+		t.Fatalf("summary = %q; want %q", got, want)
+	}
+	if got := webPublishSummary(Bundle{}, Bundle{}); got != "Home Assistant package changes ready for review." {
+		t.Fatalf("fallback summary = %q", got)
 	}
 }
 

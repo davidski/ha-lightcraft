@@ -200,6 +200,7 @@ type webPage struct {
 	YAMLFile                string
 	YAML                    string
 	Diff                    string
+	ChangeSummary           string
 	ImportReady             bool
 	ImportReason            string
 	ImportNeedsConfirmation bool
@@ -531,8 +532,7 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 				return webPage{}, diffErr
 			}
 			page.Diff = diff
-		} else {
-			page.Diff = "No changes."
+			page.ChangeSummary = webPublishSummary(a.baseline, a.bundle)
 		}
 	}
 	if err != nil {
@@ -546,10 +546,58 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 		page.ImportReason = "Import requires SSH and Home Assistant configuration."
 	}
 	if page.PublishReason == "" && len(changes) == 0 {
-		page.PublishReason = "No changes to publish."
+		page.PublishReason = "No local changes to publish."
 	}
 	page.PublishReady = a.baselineReady && a.publisher != nil && page.PublishReason == ""
+	if !page.PublishReady && page.PublishReason == "" {
+		page.PublishReason = "Publishing requires an imported baseline and a configured Home Assistant connection."
+	}
 	return page, nil
+}
+
+func webPublishSummary(baseline, draft Bundle) string {
+	baseline, draft = materializeNativeBundle(baseline), materializeNativeBundle(draft)
+	before, _ := baseline.Files[Scripts].Data.(map[string]any)
+	after, _ := draft.Files[Scripts].Data.(map[string]any)
+	var parts []string
+	for _, kind := range []struct{ prefix, label string }{{sequencePrefix, "sequence"}, {assignmentPrefix, "schedule"}} {
+		added, updated, removed := 0, 0, 0
+		for id, value := range after {
+			if !strings.HasPrefix(id, kind.prefix) {
+				continue
+			}
+			if old, exists := before[id]; !exists {
+				added++
+			} else {
+				oldJSON, _ := canonicalJSON(old)
+				newJSON, _ := canonicalJSON(value)
+				if !bytes.Equal(oldJSON, newJSON) {
+					updated++
+				}
+			}
+		}
+		for id := range before {
+			if _, exists := after[id]; !exists && strings.HasPrefix(id, kind.prefix) {
+				removed++
+			}
+		}
+		for _, change := range []struct {
+			count  int
+			action string
+		}{{added, "added"}, {updated, "updated"}, {removed, "removed"}} {
+			if change.count > 0 {
+				label := kind.label
+				if change.count != 1 {
+					label += "s"
+				}
+				parts = append(parts, fmt.Sprintf("%d %s %s", change.count, label, change.action))
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return "Home Assistant package changes ready for review."
+	}
+	return strings.Join(parts, " · ")
 }
 
 func renderWebLightColor(value map[string]any) string {
