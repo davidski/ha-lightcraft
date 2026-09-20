@@ -75,7 +75,7 @@ func (t SSHFileTransport) run(ctx context.Context, remote string) ([]byte, error
 	command := exec.CommandContext(ctx, "ssh", args...)
 	var stderr bytes.Buffer
 	command.Stderr = io.MultiWriter(&stderr, os.Stderr)
-	fmt.Fprintf(os.Stdout, "ha-lightcraft: ssh %s\n", t.target())
+	_, _ = fmt.Fprintf(os.Stdout, "ha-lightcraft: ssh %s\n", t.target())
 	output, err := command.Output()
 	if err != nil {
 		commandErr := &sshCommandError{err: err, stderr: stderr.String()}
