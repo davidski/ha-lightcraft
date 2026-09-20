@@ -387,7 +387,7 @@ func TestWebDraftEditPersists(t *testing.T) {
 		t.Fatalf("color picker does not match preview bar rounding: %s", body)
 	}
 	xyStart := strings.Index(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:8px"`)
-	if xyStart < 0 || !strings.Contains(body[xyStart:], `<div><label for="color-x">`) || !strings.Contains(body[xyStart:], `</div><div><label for="color-y">`) || !strings.Contains(body[xyStart:], `</div></div><button>Update draft`) {
+	if xyStart < 0 || !strings.Contains(body[xyStart:], `<div><label for="color-x">`) || !strings.Contains(body[xyStart:], `</div><div><label for="color-y">`) || !strings.Contains(body[xyStart:], `</div></div><button>Update color`) || !strings.Contains(body[xyStart:], `>Delete color</button>`) {
 		t.Fatalf("X/Y controls are not in one row container: %s", body)
 	}
 
