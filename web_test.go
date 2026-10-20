@@ -102,7 +102,7 @@ func TestWebTemplateContextualEscaping(t *testing.T) {
 				if html.UnescapeString(value) != malicious {
 					t.Fatalf("preview name did not round trip: %q", value)
 				}
-				for _, want := range []string{`background-color:#FF0000;opacity:0.502`, `data-brightness="128" data-hold="2"`, "repeat= true", "name.textContent=step.dataset.name", "setTimeout(()=>", "show()})()", "querySelector('.preview-bar')"} {
+				for _, want := range []string{`background-color:#FF0000;opacity:0.502`, `data-brightness="128" data-hold="2"`, "repeat= true", "name.textContent=step.dataset.name", "setTimeout(()=>", "schedule()})()", "querySelector('.preview-bar')"} {
 					if !strings.Contains(body, want) {
 						t.Errorf("preview missing %q", want)
 					}
@@ -266,7 +266,7 @@ func TestWebAgendaShowsDenseScheduleRows(t *testing.T) {
 	request.Host = "127.0.0.1:8080"
 	app.handler().ServeHTTP(response, request)
 	body := response.Body.String()
-	if response.Code != http.StatusOK || !strings.Contains(body, `class="active">Agenda</a>`) || !strings.Contains(body, "Schedule agenda") || strings.Count(body, `class="agenda-week"`) != 2 || strings.Count(body, `class="agenda-table"`) != 2 || !strings.Contains(body, `view=schedules&amp;edit=exterior`) || !strings.Contains(body, "Exterior") || !strings.Contains(body, "4 lights") || !strings.Contains(body, "Nov 29") || !strings.Contains(body, "Dec 6") || !strings.Contains(body, "2026") {
+	if response.Code != http.StatusOK || !strings.Contains(body, `class="active" aria-current="page">Agenda</a>`) || !strings.Contains(body, "Schedule agenda") || strings.Count(body, `class="agenda-week"`) != 2 || strings.Count(body, `class="agenda-table"`) != 2 || !strings.Contains(body, `view=schedules&amp;edit=exterior`) || !strings.Contains(body, "Exterior") || !strings.Contains(body, "4 lights") || !strings.Contains(body, "Nov 29") || !strings.Contains(body, "Dec 6") || !strings.Contains(body, "2026") {
 		t.Fatalf("agenda page = %d %s", response.Code, body)
 	}
 }
@@ -302,7 +302,7 @@ func TestWebSequenceUpdateKeepsSelection(t *testing.T) {
 	request.Host = "127.0.0.1:8080"
 	response = httptest.NewRecorder()
 	app.handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Edit sequence") || !strings.Contains(response.Body.String(), "Christmas lights") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Sequence · Local draft") || !strings.Contains(response.Body.String(), "Christmas lights") {
 		t.Fatalf("updated sequence was not selected: %d %s", response.Code, response.Body.String())
 	}
 }
@@ -345,7 +345,7 @@ func TestWebYAMLUsesOnePackageEntryAndDiff(t *testing.T) {
 	response = httptest.NewRecorder()
 	app.handler().ServeHTTP(response, request)
 	body = response.Body.String()
-	for _, want := range []string{"No local changes to publish.", "<button disabled>Publish changes</button>", `<details class="panel yaml-file"><summary>View generated YAML</summary>`, `<details class="import-action"><summary>Import…</summary>`, `required pattern="IMPORT"`, "Existing local colors are retained."} {
+	for _, want := range []string{"No local changes to publish.", "<button disabled>Publish changes</button>", `<details class="panel yaml-file"><summary>View generated YAML</summary>`, `<details class="import-action"><summary>Replace local draft from Home Assistant…</summary>`, `required pattern="IMPORT"`, "Existing local colors are retained."} {
 		if !strings.Contains(body, want) {
 			t.Errorf("clean publish view missing %q", want)
 		}
@@ -397,7 +397,7 @@ func TestWebDraftEditPersists(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.Host = "127.0.0.1:8080"
 	handler.ServeHTTP(response, request)
-	if body := response.Body.String(); !strings.Contains(body, `<a href="/?view=colors" class="active">Colors</a>`) || !strings.Contains(body, `<link rel="preload" href="/favicon.png" as="image" type="image/png" fetchpriority="high">`) || !strings.Contains(body, `<link rel="icon" href="/favicon.png" type="image/png">`) || !strings.Contains(body, `<img class="brand-icon" src="/favicon.png" alt="">`) {
+	if body := response.Body.String(); !strings.Contains(body, `<a href="/?view=colors" class="active" aria-current="page">Colors</a>`) || !strings.Contains(body, `<link rel="preload" href="/favicon.png" as="image" type="image/png" fetchpriority="high">`) || !strings.Contains(body, `<link rel="icon" href="/favicon.png" type="image/png">`) || !strings.Contains(body, `<img class="brand-icon" src="/favicon.png" alt="">`) {
 		t.Fatalf("default web view is not Colors: %s", body)
 	}
 	response = httptest.NewRecorder()
@@ -414,17 +414,17 @@ func TestWebDraftEditPersists(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	body := response.Body.String()
 	wantHex := cieRGBHex(CIEColor{X: .64, Y: .33})
-	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(body, "scrollbar-gutter:stable") || !strings.Contains(body, ">Home Assistant</a>") || !strings.Contains(body, ">Inventory</a>") || !strings.Contains(body, `.nav-divider{width:1px;align-self:stretch;`) || !strings.Contains(body, `class="nav-divider"`) || strings.Contains(body, ">YAML / Diff</a>") || !strings.Contains(body, "Red") || !strings.Contains(body, `name="display_name" autocomplete="off"`) || strings.Contains(body, `name="name"`) || !strings.Contains(body, `type="color" value="`+wantHex+`"`) || !strings.Contains(body, "setColorXY") || !strings.Contains(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:8px"`) || strings.Index(body, `view=colors`) > strings.Index(body, `view=sequences`) || strings.Index(body, `view=sequences`) > strings.Index(body, `view=schedules`) || strings.Index(body, `view=schedules`) > strings.Index(body, `view=inventory`) {
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" || !strings.Contains(body, "scrollbar-gutter:stable") || !strings.Contains(body, ">Home Assistant</a>") || !strings.Contains(body, ">Inventory</a>") || !strings.Contains(body, `.nav-divider{width:1px;align-self:stretch;`) || !strings.Contains(body, `class="nav-divider"`) || strings.Contains(body, ">YAML / Diff</a>") || !strings.Contains(body, "Red") || !strings.Contains(body, `name="display_name" autocomplete="off"`) || strings.Contains(body, `name="name"`) || !strings.Contains(body, `type="color" value="`+wantHex+`"`) || !strings.Contains(body, "setColorXY") || !strings.Contains(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem"`) || strings.Index(body, `view=colors`) > strings.Index(body, `view=sequences`) || strings.Index(body, `view=sequences`) > strings.Index(body, `view=schedules`) || strings.Index(body, `view=schedules`) > strings.Index(body, `view=inventory`) {
 		t.Fatalf("unexpected color page: %d %s", response.Code, response.Body.String())
 	}
-	if !strings.Contains(body, `.grid > .panel:first-child > .button{order:1`) || !strings.Contains(body, `.grid > .panel:first-child > .button{width:max-content;max-width:100%}`) || !strings.Contains(body, `.grid > .panel:first-child > .items{order:2}`) {
+	if !strings.Contains(body, `.grid > .panel:first-child > .button{order:1`) || !strings.Contains(body, `margin-bottom:.875rem;width:max-content;max-width:100%}`) || !strings.Contains(body, `.grid > .panel:first-child > .items{order:2}`) {
 		t.Fatalf("New color action is not positioned above the sidebar list: %s", body)
 	}
-	if !strings.Contains(body, `input[type=color]{height:52px;padding:4px;cursor:pointer;border-radius:5px}`) {
+	if !strings.Contains(body, `input[type=color]{height:3.25rem;padding:.25rem;cursor:pointer;border-radius:var(--radius-sm)}`) {
 		t.Fatalf("color picker does not match preview bar rounding: %s", body)
 	}
-	xyStart := strings.Index(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:8px"`)
-	if xyStart < 0 || !strings.Contains(body[xyStart:], `<div><label for="color-x">`) || !strings.Contains(body[xyStart:], `</div><div><label for="color-y">`) || !strings.Contains(body[xyStart:], `</div></div><button>Update color`) || !strings.Contains(body[xyStart:], `>Delete color</button>`) {
+	xyStart := strings.Index(body, `style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem"`)
+	if xyStart < 0 || !strings.Contains(body[xyStart:], `<div><label for="color-x">`) || !strings.Contains(body[xyStart:], `</div><div><label for="color-y">`) || !strings.Contains(body[xyStart:], `</div></div><div class="form-actions"><button>Update draft`) || !strings.Contains(body[xyStart:], `>Delete color</button>`) {
 		t.Fatalf("X/Y controls are not in one row container: %s", body)
 	}
 
@@ -689,18 +689,23 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	handler.ServeHTTP(emptyResponse, emptyRequest)
 	emptyBody := emptyResponse.Body.String()
 	emptySlot := strings.Index(emptyBody, `class="sequence-preview-slot"`)
-	emptyGrid := strings.Index(emptyBody, `<div class="grid"><section class="panel"><h2>Sequences`)
-	if emptySlot < 0 || emptyGrid < 0 || emptySlot > emptyGrid || !strings.Contains(emptyBody, `class="sequence-preview-slot" style="height:300px;margin:0 0 20px`) || !strings.Contains(emptyBody, "Select a sequence to preview it.") {
-		t.Fatalf("sequence preview slot missing before selection: %s", emptyBody)
+	emptyGrid := strings.Index(emptyBody, `<div class="grid"><section class="panel catalog"><h2>Sequences`)
+	if emptySlot < 0 || emptyGrid < 0 || emptySlot < emptyGrid || !strings.Contains(emptyBody, `required value="100"`) || strings.Contains(emptyBody, `height:300px`) || !strings.Contains(emptyBody, "Select a sequence to preview it.") {
+		t.Fatalf("compact preview missing inside empty editor: %s", emptyBody)
 	}
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/?view=schedules&edit=porch", nil)
 	request.Host = "127.0.0.1:8080"
 	handler.ServeHTTP(response, request)
 	body := response.Body.String()
+	for _, heading := range []string{"Program", "Light targets", "Timing", "Finish behavior"} {
+		if !strings.Contains(body, "<h3>"+heading+"</h3>") {
+			t.Fatalf("schedule section %q missing", heading)
+		}
+	}
 	groupIndex := strings.Index(body, `class="group-target"`)
 	singleIndex := strings.Index(body, `value="light.one"`)
-	if !strings.Contains(body, `type="checkbox" value="light.one"`) || strings.Contains(body, `class="light-kind single">Single</span>`) || !strings.Contains(body, `class="light-kind group">Group</span>`) || groupIndex < 0 || singleIndex < 0 || groupIndex > singleIndex || !strings.Contains(body, `id="schedule-title" name="schedule_title" autocomplete="off"`) || strings.Contains(body, `id="schedule-name"`) || !strings.Contains(body, `Start date (M-D or YYYY-M-D)`) || !strings.Contains(body, `End date (M-D or YYYY-M-D)`) || !strings.Contains(body, `Start time (HH:MM or sunset)`) || !strings.Contains(body, `Stop time (HH:MM)`) || !strings.Contains(body, `<label>When schedule stops<select name="finish" required>`) || !strings.Contains(body, `<option value="off" selected>Turn lights off</option>`) || !strings.Contains(body, `<option value="leave">Leave current light state</option>`) || strings.Contains(body, `<input name="finish"`) || !strings.Contains(body, `class="step-grid schedule-times"`) || !strings.Contains(body, `grid-template-areas:"start-date start-time" "end-date stop-time" "finish finish"`) {
+	if !strings.Contains(body, `type="checkbox" value="light.one"`) || strings.Contains(body, `class="light-kind single">Single</span>`) || !strings.Contains(body, `class="light-kind group">Group</span>`) || groupIndex < 0 || singleIndex < 0 || groupIndex > singleIndex || !strings.Contains(body, `id="schedule-title" name="schedule_title" autocomplete="off"`) || strings.Contains(body, `id="schedule-name"`) || !strings.Contains(body, `Start date (M-D or YYYY-M-D)`) || !strings.Contains(body, `End date (M-D or YYYY-M-D)`) || !strings.Contains(body, `Start time (HH:MM or sunset)`) || !strings.Contains(body, `Stop time (HH:MM)`) || !strings.Contains(body, `<label>When schedule stops<select name="finish" required>`) || !strings.Contains(body, `<option value="off" selected>Turn lights off</option>`) || !strings.Contains(body, `<option value="leave">Leave current light state</option>`) || strings.Contains(body, `<input name="finish"`) || !strings.Contains(body, `class="step-grid schedule-times"`) || !strings.Contains(body, `grid-template-areas:"start-date start-time" "end-date stop-time"`) {
 		t.Fatalf("schedule light picker missing: %s", body)
 	}
 	if !strings.Contains(body, `</ul><a class="button" href="/?view=schedules">New schedule</a>`) {
@@ -720,8 +725,8 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	body = response.Body.String()
 	previewIndex := strings.Index(body, `<section class="panel sequence-preview" id="sequence-preview">`)
-	gridIndex := strings.Index(body, `<div class="grid"><section class="panel"><h2>Sequences`)
-	if previewIndex < 0 || gridIndex < 0 || previewIndex > gridIndex || !strings.Contains(body, `class="sequence-preview-slot" style="height:300px;margin:0 0 20px`) || !strings.Contains(body, `name="display_name" autocomplete="off"`) || !strings.Contains(body, `name="step_brightness" type="number" min="0" max="100" step="1"`) || !strings.Contains(body, "light.one") || !strings.Contains(body, `class="preview-color-bar"`) || !strings.Contains(body, `background-color:`+previewRGBHex(currentCatalogStep(app.bundle, sequence.Steps[0]))) || !strings.Contains(body, "XY (0.200, 0.200)") || !strings.Contains(body, "RGB") || !strings.Contains(body, `data-brightness="100"`) || !strings.Contains(body, `<label style="display:none">Name<input name="step_name"`) {
+	gridIndex := strings.Index(body, `<div class="grid"><section class="panel catalog"><h2>Sequences`)
+	if previewIndex < 0 || gridIndex < 0 || previewIndex < gridIndex || !strings.Contains(body, `class="active" aria-current="true">Red loop`) || strings.Contains(body, `height:300px`) || !strings.Contains(body, `name="display_name" autocomplete="off"`) || !strings.Contains(body, `name="step_brightness" type="number" min="0" max="100" step="1"`) || !strings.Contains(body, "light.one") || !strings.Contains(body, `class="preview-color-bar"`) || !strings.Contains(body, `background-color:`+previewRGBHex(currentCatalogStep(app.bundle, sequence.Steps[0]))) || !strings.Contains(body, "XY (0.200, 0.200)") || !strings.Contains(body, "RGB") || !strings.Contains(body, `data-brightness="100"`) || !strings.Contains(body, `<label style="display:none">Name<input name="step_name"`) {
 		t.Fatalf("sequence preview missing: %s", body)
 	}
 	api.states["light.back_door_light"] = LightState{EntityID: "light.back_door_light", State: "off", Attribute: map[string]any{"supported_color_modes": []any{"onoff"}}}
@@ -741,8 +746,42 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	if !strings.Contains(body, "Could not update draft: light.back_door_light does not support color") || !strings.Contains(body, `value="Back door"`) || !strings.Contains(body, `value="02-14"`) || !strings.Contains(body, `value="02-18"`) || !strings.Contains(body, `value="18:30"`) || !strings.Contains(body, `value="23:15"`) || !strings.Contains(body, `value="light.back_door_light" checked`) || !strings.Contains(body, `<option value="leave" selected>Leave current light state</option>`) {
 		t.Fatalf("schedule form data was lost after target validation error: %s", body)
 	}
+	if !strings.Contains(body, `role="group" aria-label="Light targets" aria-invalid="true" aria-describedby="error-targets"`) || !strings.Contains(body, `<span class="field-error" id="error-targets">Light.back_door_light does not support color</span>`) {
+		t.Fatalf("target error is not tied to the light picker: %s", body)
+	}
 	if _, exists := lightingAssignments(app.bundle)["back_door"]; exists {
 		t.Fatal("invalid schedule was added to the draft")
+	}
+	for _, failed := range []struct {
+		path, location string
+		form           url.Values
+		want           []string
+	}{
+		{"/color", "/?view=colors&edit=red", url.Values{"id": {"red"}, "display_name": {"Red edited"}, "x": {"0.8"}, "y": {"0.8"}},
+			[]string{`value="Red edited"`, `name="x" type="number" step="any" required value="0.8"`, `class="active" aria-current="true">Red `, `required value="0.8" aria-invalid="true" aria-describedby="error-xy">`, `<span class="field-error" id="error-xy">CIE x must be 0 or more, y above 0, and x + y at most 1</span>`}},
+		{"/sequence", "/?view=sequences&edit=red_loop", url.Values{"id": {"red_loop"}, "display_name": {"Red loop edited"}, "step_color": {"red", "red"}, "step_brightness": {"40", "60"}, "step_hold": {"2", "3"}, "step_transition": {"5", "0.5"}},
+			[]string{`value="Red loop edited"`, `required value="40"`, `required value="60"`, `name="step_transition" type="number" min="0" step="any" required value="5"`, `id="sequence-preview"`, `<select name="step_color" required aria-invalid="true" aria-describedby="error-step-0">`, `<span class="field-error" id="error-step-0">Step 1: brightness`}},
+	} {
+		failed.form.Set("token", app.token)
+		failed.form.Set("hash", app.bundle.Hash)
+		request = httptest.NewRequest(http.MethodPost, failed.path, strings.NewReader(failed.form.Encode()))
+		request.Host = "127.0.0.1:8080"
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if location := response.Header().Get("Location"); response.Code != http.StatusSeeOther || location != failed.location {
+			t.Fatalf("failed %s redirect = %d %q, want %q", failed.path, response.Code, location, failed.location)
+		}
+		response = httptest.NewRecorder()
+		request = httptest.NewRequest(http.MethodGet, failed.location, nil)
+		request.Host = "127.0.0.1:8080"
+		handler.ServeHTTP(response, request)
+		body = response.Body.String()
+		for _, want := range append(failed.want, `<div class="notice error" role="alert">Could not update draft: `) {
+			if !strings.Contains(body, want) {
+				t.Errorf("failed %s lost %q", failed.path, want)
+			}
+		}
 	}
 	postForm(t, handler, "/schedule", url.Values{
 		"token": {app.token}, "hash": {app.bundle.Hash}, "id": {"unpadded_web"}, "schedule_title": {"Unpadded web"}, "sequence": {"red_loop"},

@@ -226,6 +226,10 @@ pre-commit hook. `prek run --all-files` runs the hook across the repository.
 
 ## See Also
 
+- [Workbench design system](docs/design-system.md)
+- [Prioritized web design review](docs/DESIGN_REVIEW.md)
+- [Application architecture](DESIGN.md)
+
 For general-purpose seasonal scheduling in Home Assistant, see
 [ha-scheduler](https://github.com/Smiley73/ha-scheduler). This project focuses
 on lighting-specific design: reusable custom colors, sequenced brightness and

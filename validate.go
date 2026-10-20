@@ -1,8 +1,31 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 )
+
+// fieldError ties a validation error to the web form field that caused it.
+type fieldError struct {
+	field string
+	err   error
+}
+
+func (e fieldError) Error() string { return e.err.Error() }
+func (e fieldError) Unwrap() error { return e.err }
+
+func fieldErrorf(field, format string, args ...any) error {
+	return fieldError{field, fmt.Errorf(format, args...)}
+}
+
+// errorField returns the form field an error belongs to, or "" when it applies to the whole form.
+func errorField(err error) string {
+	var field fieldError
+	if errors.As(err, &field) {
+		return field.field
+	}
+	return ""
+}
 
 func ValidateBundle(bundle Bundle) error {
 	for kind, config := range bundle.Files {

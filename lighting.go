@@ -58,17 +58,17 @@ var datedDatePattern = regexp.MustCompile(`^\d{4}-\d{1,2}-\d{1,2}$`)
 
 func (s ColorSequence) Validate() error {
 	if !entityName.MatchString(s.ID) || strings.TrimSpace(s.Name) == "" {
-		return fmt.Errorf("sequence needs a name and a lowercase identifier")
+		return fieldErrorf("display_name", "sequence needs a name and a lowercase identifier")
 	}
 	if len(s.Steps) == 0 {
-		return fmt.Errorf("add at least one color step")
+		return fieldErrorf("steps", "add at least one color step")
 	}
 	for i, step := range s.Steps {
 		if strings.TrimSpace(step.Name) == "" || len(step.XY) != 2 || math.IsNaN(step.XY[0]) || math.IsInf(step.XY[0], 0) || math.IsNaN(step.XY[1]) || math.IsInf(step.XY[1], 0) || step.XY[0] < 0 || step.XY[1] <= 0 || step.XY[0]+step.XY[1] > 1 {
-			return fmt.Errorf("step %d needs a name and valid XY color", i+1)
+			return fieldErrorf(fmt.Sprintf("step-%d", i), "step %d needs a name and valid XY color", i+1)
 		}
 		if step.Brightness < 1 || step.Brightness > 255 || math.IsNaN(step.Hold) || math.IsInf(step.Hold, 0) || step.Hold < 1 || step.Hold > 86400 || math.IsNaN(step.Transition) || math.IsInf(step.Transition, 0) || step.Transition < 0 || step.Transition > step.Hold {
-			return fmt.Errorf("step %d: brightness 1–255, hold 1–86400 seconds, transition 0–hold", i+1)
+			return fieldErrorf(fmt.Sprintf("step-%d", i), "step %d: brightness 1–255, hold 1–86400 seconds, transition 0–hold", i+1)
 		}
 	}
 	return nil
@@ -76,66 +76,66 @@ func (s ColorSequence) Validate() error {
 
 func (a LightingAssignment) Validate() error {
 	if !entityName.MatchString(a.ID) || strings.TrimSpace(a.Name) == "" {
-		return fmt.Errorf("assignment needs a name")
+		return fieldErrorf("schedule_title", "assignment needs a name")
 	}
 	if a.WLED != nil {
 		if len(a.Targets) > 0 || a.Sequence != "" {
 			return fmt.Errorf("WLED assignments cannot include a color sequence or Hue lights")
 		}
 		if err := validateEntityID(a.WLED.Light, "light"); err != nil {
-			return fmt.Errorf("WLED light: %w", err)
+			return fieldErrorf("wled_light", "WLED light: %w", err)
 		}
 		if err := validateEntityID(a.WLED.Select, "select"); err != nil {
-			return fmt.Errorf("WLED selector: %w", err)
+			return fieldErrorf("wled_select", "WLED selector: %w", err)
 		}
 		if strings.TrimSpace(a.WLED.Option) == "" {
-			return fmt.Errorf("WLED option is required")
+			return fieldErrorf("wled_option", "WLED option is required")
 		}
 	} else {
 		if !entityName.MatchString(a.Sequence) {
-			return fmt.Errorf("assignment needs a name and sequence")
+			return fieldErrorf("sequence", "assignment needs a name and sequence")
 		}
 		if len(a.Targets) == 0 {
-			return fmt.Errorf("select at least one light")
+			return fieldErrorf("targets", "select at least one light")
 		}
 		seen := map[string]bool{}
 		for _, id := range a.Targets {
 			if err := validateEntityID(id, "light"); err != nil || seen[id] {
-				return fmt.Errorf("invalid or duplicate light %q", id)
+				return fieldErrorf("targets", "invalid or duplicate light %q", id)
 			}
 			seen[id] = true
 		}
 	}
 	start, annualStart, err := normalizeScheduleDate(a.Start)
 	if err != nil {
-		return fmt.Errorf("start date: use M-D annually or YYYY-M-D once")
+		return fieldErrorf("start", "start date: use M-D annually or YYYY-M-D once")
 	}
 	end, annualEnd, err := normalizeScheduleDate(a.End)
 	if err != nil || annualStart != annualEnd {
-		return fmt.Errorf("end date must use the same format as start")
+		return fieldErrorf("end", "end date must use the same format as start")
 	}
 	if !annualStart {
 		startDate, _ := time.Parse("2006-01-02", start)
 		endDate, _ := time.Parse("2006-01-02", end)
 		if endDate.Before(startDate) {
-			return fmt.Errorf("end date precedes start date")
+			return fieldErrorf("end", "end date precedes start date")
 		}
 	}
 	if !a.AllDay && a.On != "sunset" {
 		if parsed, err := time.Parse("15:04", a.On); err != nil || parsed.Format("15:04") != a.On {
-			return fmt.Errorf("start time: use HH:MM or sunset")
+			return fieldErrorf("on", "start time: use HH:MM or sunset")
 		}
 	}
 	if !a.AllDay {
 		if parsed, err := time.Parse("15:04", a.Off); err != nil || parsed.Format("15:04") != a.Off {
-			return fmt.Errorf("stop time: use HH:MM")
+			return fieldErrorf("off", "stop time: use HH:MM")
 		}
 		if a.On == a.Off {
-			return fmt.Errorf("start and stop time must differ")
+			return fieldErrorf("off", "start and stop time must differ")
 		}
 	}
 	if a.Finish != "off" && a.Finish != "leave" {
-		return fmt.Errorf("end behavior must be off or leave")
+		return fieldErrorf("finish", "end behavior must be off or leave")
 	}
 	return nil
 }
@@ -177,11 +177,11 @@ func normalizeScheduleDate(value string) (string, bool, error) {
 func normalizeLightingAssignmentDates(a LightingAssignment) (LightingAssignment, error) {
 	start, annualStart, err := normalizeScheduleDate(a.Start)
 	if err != nil {
-		return LightingAssignment{}, fmt.Errorf("start date: use M-D annually or YYYY-M-D once")
+		return LightingAssignment{}, fieldErrorf("start", "start date: use M-D annually or YYYY-M-D once")
 	}
 	end, annualEnd, err := normalizeScheduleDate(a.End)
 	if err != nil || annualStart != annualEnd {
-		return LightingAssignment{}, fmt.Errorf("end date must use the same format as start")
+		return LightingAssignment{}, fieldErrorf("end", "end date must use the same format as start")
 	}
 	a.Start, a.End = start, end
 	return a, nil
@@ -493,7 +493,7 @@ func saveLightingAssignment(bundle Bundle, a LightingAssignment) (Bundle, error)
 	a = normalized
 	if a.WLED == nil {
 		if _, ok := colorSequences(bundle)[a.Sequence]; !ok {
-			return Bundle{}, fmt.Errorf("sequence %q is missing", a.Sequence)
+			return Bundle{}, fieldErrorf("sequence", "sequence %q is missing", a.Sequence)
 		}
 	}
 	result, err := cloneBundle(bundle)

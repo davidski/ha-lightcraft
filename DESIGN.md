@@ -23,6 +23,10 @@ compiled into generated scripts.
   the external path. Loopback hosts are always allowed, and exact public host
   names may be added with `WEB_ALLOWED_HOSTS`; arbitrary hostnames are
   rejected.
+- Web presentation: the [Workbench design system](docs/design-system.md) defines the
+  workbench layout: top navigation, quiet catalogs, an editor-local compact
+  sequence preview, and grouped schedule fields. Presentation uses the same
+  server-rendered draft and guarded mutation paths described below.
 - HA access: direct REST/WebSocket state and validation APIs; native YAML
   publishing uses a separate file transport because YAML-defined HA entries
   are not editable through storage config endpoints. SSH is the production
@@ -147,7 +151,13 @@ in an initially open, full-width disclosure only when present; generated YAML
 is collapsed by default. Local status does not claim the live HA state is in
 sync. Import is a separate lower section whose disclosure reveals the existing
 replacement confirmation. There is no file picker or separate in-memory save
-step: editor updates persist to the proposed draft immediately. The local color
+step: editor updates persist to the proposed draft immediately. A rejected
+color, sequence, or schedule edit leaves the draft unchanged; the web server
+keeps that one submission in memory and re-renders it on the same object with an
+error notice so it can be corrected. Validation errors that belong to one form
+field are wrapped as a `fieldError` naming that field, so the page also marks the
+control invalid and shows the message beside it; the error text is unchanged for
+the TUI and CLI. The local color
 catalog remains outside that view and is edited through the Colors workspace.
 
 Sequence previews are draft-only views. They take light targets from schedules
