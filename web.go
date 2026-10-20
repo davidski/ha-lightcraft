@@ -36,6 +36,9 @@ type webApp struct {
 	baseline           Bundle
 	token              string
 	message            string
+	messageError       bool
+	errorField         string
+	fieldMessage       string
 	publisher          ConfigPublisher
 	refs               []ConfigRef
 	backupDir          string
@@ -50,6 +53,8 @@ type webApp struct {
 	inventoryStatus    HAInventoryStatus
 	inventoryError     string
 	pendingSchedule    *webAssignment
+	pendingColor       *webColor
+	pendingSequence    *webSequence
 }
 
 var errWebDraftChanged = errors.New("draft files changed outside the web editor; restart to load them")
@@ -188,6 +193,9 @@ type webLight struct {
 type webPage struct {
 	View                    string
 	Message                 string
+	Error                   bool
+	ErrorField              string
+	FieldMessage            string
 	Token                   string
 	Hash                    string
 	Unpublished             bool
@@ -389,8 +397,8 @@ func (a *webApp) index(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
-	page := webPage{WLEDChoices: []webWLEDChoice{}, View: view, Message: a.message, Token: a.token, Hash: a.bundle.Hash, LiveReady: a.stateAPI != nil}
-	a.message = ""
+	page := webPage{WLEDChoices: []webWLEDChoice{}, View: view, Message: a.message, Error: a.messageError, ErrorField: a.errorField, FieldMessage: a.fieldMessage, Token: a.token, Hash: a.bundle.Hash, LiveReady: a.stateAPI != nil}
+	a.message, a.messageError, a.errorField, a.fieldMessage = "", false, "", ""
 	if view == "agenda" {
 		date := parseAgendaDate(selectedDate)
 		date = date.AddDate(0, 0, -int(date.Weekday()))
@@ -462,6 +470,15 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 		page.Assignment = *a.pendingSchedule
 		a.pendingSchedule = nil
 	}
+	if a.pendingColor != nil && view == "colors" {
+		page.Color = *a.pendingColor
+	}
+	if a.pendingSequence != nil && view == "sequences" {
+		pending := *a.pendingSequence
+		pending.PreviewSteps, pending.PreviewLights = page.Sequence.PreviewSteps, page.Sequence.PreviewLights
+		page.Sequence = pending
+	}
+	a.pendingColor, a.pendingSequence = nil, nil
 	targetLights := map[string]bool{}
 	wledLights := map[string]webLight{}
 	for _, id := range webTargetLightIDs(a.inventoryStates, a.inventoryLocations) {
@@ -506,7 +523,7 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 		return strings.ToLower(page.ScheduleLights[i].Name) < strings.ToLower(page.ScheduleLights[j].Name)
 	})
 	if a.inventoryError != "" && page.Message == "" {
-		page.Message = "Home Assistant inventory unavailable: " + a.inventoryError
+		page.Message, page.Error = "Home Assistant inventory unavailable: "+a.inventoryError, true
 	}
 	changes, err := PublishDiff(a.baseline, a.bundle)
 	if err != nil {
@@ -608,7 +625,27 @@ func renderWebLightColor(value map[string]any) string {
 	return fmt.Sprintf("Color: #%02X%02X%02X · %s", rgb[0], rgb[1], rgb[2], source)
 }
 
-func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success string, persist bool, mutate func(Bundle, url.Values) (Bundle, error)) {
+// Invalid marks the control for field so assistive technology reads its error.
+func (p webPage) Invalid(field string) template.HTMLAttr {
+	if p.ErrorField != field {
+		return ""
+	}
+	return template.HTMLAttr(` aria-invalid="true" aria-describedby="error-` + field + `"`)
+}
+
+// FieldError renders the message for field next to its control.
+func (p webPage) FieldError(field string) template.HTML {
+	if p.ErrorField != field {
+		return ""
+	}
+	message := p.FieldMessage
+	if message != "" {
+		message = strings.ToUpper(message[:1]) + message[1:]
+	}
+	return template.HTML(`<span class="field-error" id="error-` + field + `">` + template.HTMLEscapeString(message) + `</span>`)
+}
+
+func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success, failure string, persist bool, mutate func(Bundle, url.Values) (Bundle, error)) {
 	if !a.validWebHost(r.Host) {
 		http.Error(w, "invalid host", http.StatusForbidden)
 		return
@@ -638,7 +675,7 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success stri
 		http.Error(w, "draft changed; reload the page", http.StatusConflict)
 		return
 	}
-	a.message = ""
+	a.message, a.messageError, a.errorField, a.fieldMessage = "", false, "", ""
 	next, err := mutate(a.bundle, r.Form)
 	if err == nil && persist {
 		err = a.persistDraft(next)
@@ -648,11 +685,19 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success stri
 		return
 	}
 	if err != nil {
-		if view == "schedules" {
+		switch r.URL.Path {
+		case "/schedule":
 			pending := webAssignmentFromForm(r.Form)
 			a.pendingSchedule = &pending
+		case "/color":
+			a.pendingColor = webColorFromForm(r.Form)
+		case "/sequence":
+			a.pendingSequence = webSequenceFromForm(r.Form)
 		}
-		a.message = "Could not update draft: " + err.Error()
+		a.message, a.messageError = failure+": "+err.Error(), true
+		if a.errorField = errorField(err); a.errorField != "" {
+			a.fieldMessage = err.Error()
+		}
 	} else {
 		a.bundle = next
 		if a.message == "" {
@@ -660,7 +705,9 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success stri
 		}
 	}
 	location := "/?view=" + url.QueryEscape(view)
-	if err == nil && view == "sequences" {
+	if id := r.Form.Get("id"); err != nil && id != "" {
+		location += "&edit=" + url.QueryEscape(id)
+	} else if err == nil && view == "sequences" {
 		id := r.Form.Get("id")
 		if id == "" {
 			id = colorID(strings.TrimSpace(r.Form.Get("display_name")))
@@ -687,18 +734,18 @@ func (a *webApp) persistDraft(bundle Bundle) error {
 }
 
 func (a *webApp) saveSequence(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "sequences", "Draft updated.", true, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "sequences", "Draft updated.", "Could not update draft", true, func(bundle Bundle, form url.Values) (Bundle, error) {
 		sequence := ColorSequence{ID: form.Get("id"), Name: strings.TrimSpace(form.Get("display_name")), Repeat: form.Get("repeat") == "on"}
 		if sequence.ID == "" {
 			sequence.ID = colorID(sequence.Name)
 			if _, exists := colorSequences(bundle)[sequence.ID]; exists {
-				return Bundle{}, fmt.Errorf("a sequence with that name already exists")
+				return Bundle{}, fieldErrorf("display_name", "a sequence with that name already exists")
 			}
 		}
 		colors := form["step_color"]
 		brightnesses, holds, transitions := form["step_brightness"], form["step_hold"], form["step_transition"]
 		if len(colors) == 0 || len(colors) != len(brightnesses) || len(colors) != len(holds) || len(colors) != len(transitions) {
-			return Bundle{}, fmt.Errorf("each color step must be complete")
+			return Bundle{}, fieldErrorf("steps", "each color step must be complete")
 		}
 		for i := range colors {
 			if colors[i] == "" && strings.TrimSpace(brightnesses[i]) == "" {
@@ -709,7 +756,7 @@ func (a *webApp) saveSequence(w http.ResponseWriter, r *http.Request) {
 			hold, hErr := strconv.ParseFloat(holds[i], 64)
 			transition, tErr := strconv.ParseFloat(transitions[i], 64)
 			if !ok || bErr != nil || brightnessPercent < 0 || brightnessPercent > 100 || hErr != nil || tErr != nil {
-				return Bundle{}, fmt.Errorf("step %d needs a catalog color, 0-100%% brightness, and numeric timing values", i+1)
+				return Bundle{}, fieldErrorf(fmt.Sprintf("step-%d", i), "step %d needs a catalog color, 0-100%% brightness, and numeric timing values", i+1)
 			}
 			step := ColorStep{Name: color.Name, XY: []float64{color.X, color.Y}, Brightness: brightnessFromPercent(brightnessPercent), Hold: hold, Transition: transition}
 			sequence.Steps = append(sequence.Steps, step)
@@ -719,7 +766,7 @@ func (a *webApp) saveSequence(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) saveSchedule(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "schedules", "Draft updated.", true, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "schedules", "Draft updated.", "Could not update draft", true, func(bundle Bundle, form url.Values) (Bundle, error) {
 		pending := webAssignmentFromForm(form)
 		assignment := LightingAssignment{ID: pending.ID, Name: pending.Name, Sequence: pending.Sequence, Targets: form["targets"], Start: pending.Start, End: pending.End, On: pending.On, Off: pending.Off, Finish: pending.Finish, Enabled: pending.Enabled, AllDay: pending.AllDay}
 		if pending.Kind == "wled" {
@@ -734,19 +781,19 @@ func (a *webApp) saveSchedule(w http.ResponseWriter, r *http.Request) {
 			var err error
 			assignment.Targets, err = resolveLightingTargets(assignment.Targets, a.inventoryStates)
 			if err != nil {
-				return Bundle{}, err
+				return Bundle{}, fieldError{"targets", err}
 			}
 		}
 		allowed := webLightSet(bundle, a.inventoryStates, a.inventoryLocations)
 		for _, target := range assignment.Targets {
 			if !allowed[target] {
-				return Bundle{}, fmt.Errorf("invalid light %q", target)
+				return Bundle{}, fieldErrorf("targets", "invalid light %q", target)
 			}
 		}
 		if assignment.ID == "" {
 			assignment.ID = colorID(assignment.Name)
 			if _, exists := lightingAssignments(bundle)[assignment.ID]; exists {
-				return Bundle{}, fmt.Errorf("a schedule with that name already exists")
+				return Bundle{}, fieldErrorf("schedule_title", "a schedule with that name already exists")
 			}
 		}
 		return saveLightingAssignment(bundle, assignment)
@@ -766,27 +813,57 @@ func webAssignmentFromForm(form url.Values) webAssignment {
 	}
 }
 
+// webColorFromForm and webSequenceFromForm keep a rejected submission so the editor can show it again.
+func webColorFromForm(form url.Values) *webColor {
+	x, _ := strconv.ParseFloat(form.Get("x"), 64)
+	y, _ := strconv.ParseFloat(form.Get("y"), 64)
+	return &webColor{ID: form.Get("id"), Name: strings.TrimSpace(form.Get("display_name")), X: x, Y: y, Hex: cieRGBHex(CIEColor{X: x, Y: y})}
+}
+
+func webSequenceFromForm(form url.Values) *webSequence {
+	sequence := &webSequence{ID: form.Get("id"), Name: strings.TrimSpace(form.Get("display_name")), Repeat: form.Get("repeat") == "on"}
+	value := func(key string, i int) string {
+		if i < len(form[key]) {
+			return form[key][i]
+		}
+		return ""
+	}
+	for i, color := range form["step_color"] {
+		brightness, _ := strconv.Atoi(value("step_brightness", i))
+		hold, _ := strconv.ParseFloat(value("step_hold", i), 64)
+		transition, _ := strconv.ParseFloat(value("step_transition", i), 64)
+		sequence.Steps = append(sequence.Steps, webStep{Color: color, Brightness: brightness, Hold: hold, Transition: transition})
+	}
+	return sequence
+}
+
 func (a *webApp) saveColor(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "colors", "Draft updated.", true, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "colors", "Draft updated.", "Could not update draft", true, func(bundle Bundle, form url.Values) (Bundle, error) {
 		name := strings.TrimSpace(form.Get("display_name"))
 		x, xErr := strconv.ParseFloat(form.Get("x"), 64)
 		y, yErr := strconv.ParseFloat(form.Get("y"), 64)
 		if xErr != nil || yErr != nil {
-			return Bundle{}, fmt.Errorf("XY coordinates must be numbers")
+			return Bundle{}, fieldErrorf("xy", "XY coordinates must be numbers")
 		}
 		id := form.Get("id")
 		if id == "" {
 			id = colorID(name)
 			if _, exists := colorDefinitions(bundle)[id]; exists {
-				return Bundle{}, fmt.Errorf("a color with that name already exists")
+				return Bundle{}, fieldErrorf("display_name", "a color with that name already exists")
 			}
+		}
+		if name == "" {
+			return Bundle{}, fieldErrorf("display_name", "a color needs a name")
+		}
+		if x < 0 || y <= 0 || x+y > 1 {
+			return Bundle{}, fieldErrorf("xy", "CIE x must be 0 or more, y above 0, and x + y at most 1")
 		}
 		return upsertColor(bundle, id, ColorDefinition{Name: name, X: x, Y: y})
 	})
 }
 
 func (a *webApp) deleteDraftItem(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "", "Draft updated.", true, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "", "Draft updated.", "Could not update draft", true, func(bundle Bundle, form url.Values) (Bundle, error) {
 		id := form.Get("id")
 		switch form.Get("kind") {
 		case "sequences":
@@ -800,7 +877,7 @@ func (a *webApp) deleteDraftItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) importDraft(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "yaml", "Imported Home Assistant YAML.", false, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "yaml", "Imported Home Assistant YAML.", "Import failed", false, func(bundle Bundle, form url.Values) (Bundle, error) {
 		if len(nativeDraftKinds(bundle)) > 0 && form.Get("confirmation") != "IMPORT" {
 			return Bundle{}, fmt.Errorf("type IMPORT to confirm")
 		}
@@ -826,7 +903,7 @@ func (a *webApp) pageImportReason() string {
 }
 
 func (a *webApp) publishDraft(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "yaml", "Published, verified, and backed up.", false, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "yaml", "Published, verified, and backed up.", "Publish failed", false, func(bundle Bundle, form url.Values) (Bundle, error) {
 		if form.Get("confirmation") != "PUBLISH" {
 			return Bundle{}, fmt.Errorf("type PUBLISH to confirm")
 		}
@@ -899,7 +976,7 @@ func (a *webApp) refreshInventory(ctx context.Context) {
 }
 
 func (a *webApp) refreshInventoryPost(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "lights", "Home Assistant light inventory refreshed.", false, func(bundle Bundle, _ url.Values) (Bundle, error) {
+	a.post(w, r, "lights", "Home Assistant light inventory refreshed.", "Inventory refresh failed", false, func(bundle Bundle, _ url.Values) (Bundle, error) {
 		a.refreshInventory(r.Context())
 		if a.inventoryError != "" {
 			return Bundle{}, errors.New(a.inventoryError)
@@ -909,7 +986,7 @@ func (a *webApp) refreshInventoryPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *webApp) controlPlayback(w http.ResponseWriter, r *http.Request) {
-	a.post(w, r, "schedules", "Live schedule playback updated.", false, func(bundle Bundle, form url.Values) (Bundle, error) {
+	a.post(w, r, "schedules", "Live schedule playback updated.", "Playback control failed", false, func(bundle Bundle, form url.Values) (Bundle, error) {
 		id, action := form.Get("id"), form.Get("action")
 		assignment, ok := lightingAssignments(bundle)[id]
 		if !a.baselineReady || !ok || stringMustJSON(lightingAssignments(a.baseline)[id]) != stringMustJSON(assignment) {
