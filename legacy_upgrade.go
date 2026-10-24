@@ -67,8 +67,8 @@ func legacySceneName(bundle Bundle, id string) string {
 }
 
 // upgradeLegacyInfrastructure converts each old holiday selector sequence to
-// a modern color sequence. The original selector script remains in the draft
-// for compatibility with existing Home Assistant automations.
+// a modern color sequence. The selector pieces are dropped afterwards by
+// retireLegacyHoliday.
 func upgradeLegacyInfrastructure(bundle, source Bundle) (Bundle, error) {
 	result, err := cloneBundle(bundle)
 	if err != nil {
@@ -93,6 +93,36 @@ func upgradeLegacyInfrastructure(bundle, source Bundle) (Bundle, error) {
 		conversionSource.Files[Scenes] = source.Files[Scenes]
 	}
 	delete(result.Files, Scenes)
+	return withHash(result)
+}
+
+// Home Assistant now owns default exterior lighting, so imports drop the old
+// holiday selector, its script, and the exterior on/off automations.
+var retiredLegacyAutomations = map[string]bool{"exterior_lights_activate": true, "1665867675382": true}
+
+func retireLegacyHoliday(bundle Bundle) (Bundle, error) {
+	result, err := cloneBundle(bundle)
+	if err != nil {
+		return Bundle{}, err
+	}
+	if scripts, ok := result.Files[Scripts].Data.(map[string]any); ok {
+		delete(scripts, holidayScriptID)
+	}
+	if helpers, ok := result.Files[Helpers].Data.(map[string]any); ok {
+		delete(helpers, "holiday")
+	}
+	if automations, ok := result.Files[Automations].Data.([]any); ok {
+		kept := automations[:0]
+		for _, raw := range automations {
+			if entry, ok := raw.(map[string]any); ok && retiredLegacyAutomations[fmt.Sprint(entry["id"])] {
+				continue
+			}
+			kept = append(kept, raw)
+		}
+		file := result.Files[Automations]
+		file.Data = kept
+		result.Files[Automations] = file
+	}
 	return withHash(result)
 }
 

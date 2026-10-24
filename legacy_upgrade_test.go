@@ -113,3 +113,25 @@ func TestImportedBundleAutomaticallyUpgradesLegacyLighting(t *testing.T) {
 		t.Fatalf("source hash = %q, want %q", upgraded.SourceHash, full.Hash)
 	}
 }
+
+func TestRetireLegacyHolidayDropsSelectorPieces(t *testing.T) {
+	bundle := Bundle{Files: map[ConfigKind]Config{
+		Scripts:     {Kind: Scripts, Data: map[string]any{holidayScriptID: map[string]any{}, "lighting_sequence_x": map[string]any{}}},
+		Helpers:     {Kind: Helpers, Data: map[string]any{"holiday": map[string]any{}, "lighting_assignment_halloween": map[string]any{}}},
+		Automations: {Kind: Automations, Data: []any{map[string]any{"id": "exterior_lights_activate"}, map[string]any{"id": "1665867675382"}, map[string]any{"id": lightingControllerID}}},
+	}}
+	got, err := retireLegacyHoliday(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scripts, helpers, automations := got.Files[Scripts].Data.(map[string]any), got.Files[Helpers].Data.(map[string]any), got.Files[Automations].Data.([]any)
+	if _, ok := scripts[holidayScriptID]; ok || len(scripts) != 1 {
+		t.Fatalf("scripts = %v", scripts)
+	}
+	if _, ok := helpers["holiday"]; ok || len(helpers) != 1 {
+		t.Fatalf("helpers = %v", helpers)
+	}
+	if len(automations) != 1 || automations[0].(map[string]any)["id"] != lightingControllerID {
+		t.Fatalf("automations = %v", automations)
+	}
+}

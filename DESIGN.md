@@ -71,7 +71,10 @@ compiled into generated scripts.
 - Migration: imports detect the legacy `holiday_lights` format and read its
   optional scene file transiently to convert it into color sequences. Scenes
   are never copied into `current` or saved as a modern draft file. Migration
-  is supported by the CLI and web import flows.
+  is supported by the CLI and web import flows. Imports then retire the
+  legacy selector pieces (`script.holiday_lights`, `input_select.holiday`,
+  and the `exterior_lights_activate` / `1665867675382` exterior on/off
+  automations); HA owns default exterior lighting outside the package.
 - Color representation: sequence steps store and publish Home Assistant
   `xy_color`; RGB is derived only for readable swatches and previews. Older
   RGB-only sequence data is converted when imported.
