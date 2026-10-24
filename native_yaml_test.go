@@ -391,3 +391,40 @@ func writeNestedNative(t *testing.T, dir, name, data string) {
 	}
 	writeNative(t, dir, name, data)
 }
+
+func TestNativeYAMLPublishRemovesRetiredLegacyEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "packages", "ha_lightcraft.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("automation:\n  - id: exterior_lights_activate\n    alias: Exterior lights activate\n  - id: keep\n    alias: Keep\ninput_select:\n  holiday:\n    name: Holiday\nscript:\n  holiday_lights:\n    alias: Holiday\n    sequence: []\n  keep:\n    alias: Keep\n    sequence: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths := map[ConfigKind][]string{Scripts: {"packages/ha_lightcraft.yaml"}, Automations: {"packages/ha_lightcraft.yaml"}, Helpers: {"packages/ha_lightcraft.yaml"}}
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: dir}, ConfigDir: ".", FilePaths: paths}
+	imported, err := store.ReadAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := retireLegacyHoliday(imported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Publish(context.Background(), draft, imported, bundleRefs(imported), removedRefs(imported, draft), ""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, gone := range []string{"exterior_lights_activate", "holiday"} {
+		if strings.Contains(text, gone) {
+			t.Fatalf("package still has %q: %s", gone, text)
+		}
+	}
+	if !strings.Contains(text, "id: keep") || !strings.Contains(text, "keep:") {
+		t.Fatalf("package lost kept entries: %s", text)
+	}
+}

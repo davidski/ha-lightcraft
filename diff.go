@@ -14,6 +14,25 @@ type Change struct {
 	New  string
 }
 
+// removedRefs lists baseline entries absent from the draft. Publishing
+// approves these deletions; the diff shown before PUBLISH includes them.
+func removedRefs(baseline, draft Bundle) []ConfigRef {
+	kept := bundleEntries(materializeNativeBundle(draft))
+	var removed []ConfigRef
+	for ref := range bundleEntries(materializeNativeBundle(baseline)) {
+		if _, ok := kept[ref]; !ok {
+			removed = append(removed, ref)
+		}
+	}
+	sort.Slice(removed, func(i, j int) bool {
+		if removed[i].Kind != removed[j].Kind {
+			return removed[i].Kind < removed[j].Kind
+		}
+		return removed[i].ID < removed[j].ID
+	})
+	return removed
+}
+
 func PublishDiff(old, draft Bundle) ([]Change, error) {
 	return Diff(materializeNativeBundle(old), materializeNativeBundle(draft))
 }

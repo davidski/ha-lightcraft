@@ -149,7 +149,9 @@ data tree. Native YAML import, diff, and publish continue to use the configured
 HA package path and guarded publisher.
 
 The web Home Assistant workspace leads with local publish status and a summary
-of added, updated, or removed sequences and schedules. Package changes appear
+of added, updated, or removed sequences and schedules. Typing PUBLISH approves
+every removal in that diff; the CLI and TUI approve removals only through
+`--delete`. Package changes appear
 in an initially open, full-width disclosure only when present; generated YAML
 is collapsed by default. Local status does not claim the live HA state is in
 sync. Import is a separate lower section whose disclosure reveals the existing

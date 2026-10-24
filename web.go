@@ -926,7 +926,7 @@ func (a *webApp) publishDraft(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		if err := a.publisher.Publish(ctx, bundle, a.baseline, a.refs, nil, a.backupDir); err != nil {
+		if err := a.publisher.Publish(ctx, bundle, a.baseline, a.refs, removedRefs(a.baseline, bundle), a.backupDir); err != nil {
 			return Bundle{}, fmt.Errorf("publish failed: %w", err)
 		}
 		if importer, ok := a.publisher.(interface {
