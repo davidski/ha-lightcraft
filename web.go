@@ -1013,31 +1013,17 @@ func (a *webApp) publishDraft(w http.ResponseWriter, r *http.Request) {
 		if err := a.publisher.Publish(ctx, bundle, a.baseline, a.refs, removedRefs(a.baseline, bundle), a.backupDir); err != nil {
 			return Bundle{}, fmt.Errorf("publish failed: %w", err)
 		}
-		if importer, ok := a.publisher.(interface {
-			ReadAll(context.Context) (Bundle, error)
-		}); ok {
-			refreshed, err := importer.ReadAll(ctx)
-			if err != nil {
-				a.message = "Published, verified, and backed up. Could not refresh the baseline: " + err.Error()
-				a.publisher = nil
-				a.publishError = "Restart the web editor before publishing again."
-			} else {
-				a.baseline = refreshed
-			}
-		} else if importer, ok := a.publisher.(interface {
-			Import(context.Context, []ConfigRef) (Bundle, error)
-		}); ok {
-			refreshed, err := importer.Import(ctx, a.refs)
-			if err != nil {
-				a.message = "Published, verified, and backed up. Could not refresh the baseline: " + err.Error()
-				a.publisher = nil
-				a.publishError = "Restart the web editor before publishing again."
-			} else {
-				a.baseline = refreshed
-			}
-		} else {
+		refreshed, ok, err := refreshPublishBaseline(ctx, a.publisher, a.refs, a.baselineDir)
+		switch {
+		case !ok:
 			a.publisher = nil
 			a.publishError = "Restart the web editor before publishing again."
+		case err != nil:
+			a.message = "Published, verified, and backed up. Could not refresh the baseline: " + err.Error()
+			a.publisher = nil
+			a.publishError = "Re-import from Home Assistant before publishing again."
+		default:
+			a.baseline, a.diskBaselineHash = refreshed, refreshed.Hash
 		}
 		return bundle, nil
 	})

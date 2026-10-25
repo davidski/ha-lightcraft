@@ -428,3 +428,31 @@ func TestNativeYAMLPublishRemovesRetiredLegacyEntries(t *testing.T) {
 		t.Fatalf("package lost kept entries: %s", text)
 	}
 }
+
+func TestRefreshPublishBaselineRewritesSnapshot(t *testing.T) {
+	remote, baselineDir := t.TempDir(), t.TempDir()
+	paths := map[ConfigKind][]string{Scripts: {"pkg.yaml"}, Automations: {"pkg.yaml"}, Helpers: {"pkg.yaml"}}
+	write := func(alias string) {
+		data := "automation: []\ninput_select: {}\nscript:\n  porch:\n    alias: " + alias + "\n    sequence: []\n"
+		if err := os.WriteFile(filepath.Join(remote, "pkg.yaml"), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := NativeYAMLStore{Transport: LocalFileTransport{Root: remote}, ConfigDir: ".", FilePaths: paths}
+	write("Before")
+	if _, err := store.Pull(context.Background(), baselineDir); err != nil {
+		t.Fatal(err)
+	}
+	write("After")
+	refreshed, ok, err := refreshPublishBaseline(context.Background(), store, nil, baselineDir)
+	if err != nil || !ok {
+		t.Fatalf("refresh = %v %v", ok, err)
+	}
+	reloaded, err := loadBaselineBundle(baselineDir, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Hash != refreshed.Hash || !strings.Contains(stringMustJSON(reloaded.Files[Scripts].Data), "After") {
+		t.Fatalf("baseline on disk was not refreshed: %s", stringMustJSON(reloaded.Files[Scripts].Data))
+	}
+}

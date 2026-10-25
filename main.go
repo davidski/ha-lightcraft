@@ -143,6 +143,9 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("Published and verified.")
+		if _, _, err := refreshPublishBaseline(context.Background(), publisher, refs, *baseline); err != nil {
+			fmt.Fprintln(os.Stderr, "Could not refresh the baseline; re-import before publishing again:", err)
+		}
 		return
 	}
 	bundle, err := LoadDraftBundle(*draft, colorsDir, filePaths)
@@ -168,7 +171,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	model := statusModel{bundle: bundle, draftDir: *draft, filePaths: filePaths, colorsDir: colorsDir, baseline: baselineBundle, baselineImported: baselineImported, refs: refs, deletes: deletes, backup: *backupRoot, dashboardWorkspace: 2, dashboardFocus: 1}
+	model := statusModel{bundle: bundle, draftDir: *draft, filePaths: filePaths, colorsDir: colorsDir, baseline: baselineBundle, baselineDir: currentDir, baselineImported: baselineImported, refs: refs, deletes: deletes, backup: *backupRoot, dashboardWorkspace: 2, dashboardFocus: 1}
 	model.loadingSpinner = spinner.New()
 	if (*sshHost != "" || *haConfigDir != "") && *haURL != "" && os.Getenv(*tokenEnv) != "" {
 		store, storeErr := nativeStore(*sshHost, *sshUser, *haConfigDir, *haURL, os.Getenv(*tokenEnv), filePaths)

@@ -68,6 +68,7 @@ type statusModel struct {
 	refs                   []ConfigRef
 	deletes                []ConfigRef
 	backup                 string
+	baselineDir            string
 	pending                string
 	width                  int
 	height                 int
@@ -1639,7 +1640,7 @@ func (m statusModel) updatePrompt(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.prompt == "publish" && m.input == "PUBLISH" {
 			m.operationLoading = true
-			return m, runPublishCmd(m.store, m.bundle, *m.baseline, m.refs, m.deletes, m.backup)
+			return m, runPublishCmd(m.store, m.bundle, *m.baseline, m.refs, m.deletes, m.backup, m.baselineDir)
 		}
 	default:
 		m.input += keyText(key)
@@ -1657,7 +1658,7 @@ func keyText(key tea.KeyMsg) string {
 	return ""
 }
 
-func runPublishCmd(store ConfigPublisher, draft, baseline Bundle, refs, deletes []ConfigRef, backup string) tea.Cmd {
+func runPublishCmd(store ConfigPublisher, draft, baseline Bundle, refs, deletes []ConfigRef, backup, baselineDir string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -1665,24 +1666,10 @@ func runPublishCmd(store ConfigPublisher, draft, baseline Bundle, refs, deletes 
 			return operationResultMsg{operation: "publish", err: fmt.Errorf("Publish failed: %w", err)}
 		}
 		result := operationResultMsg{operation: "publish"}
-		if importer, ok := store.(interface {
-			ReadAll(context.Context) (Bundle, error)
-		}); ok {
-			refreshed, err := importer.ReadAll(ctx)
-			if err != nil {
-				result.warning = "Could not refresh the publish baseline: " + err.Error()
-			} else {
-				result.baseline = &refreshed
-			}
-		} else if importer, ok := store.(interface {
-			Import(context.Context, []ConfigRef) (Bundle, error)
-		}); ok {
-			refreshed, err := importer.Import(ctx, refs)
-			if err != nil {
-				result.warning = "Could not refresh the publish baseline: " + err.Error()
-			} else {
-				result.baseline = &refreshed
-			}
+		if refreshed, ok, err := refreshPublishBaseline(ctx, store, refs, baselineDir); err != nil {
+			result.warning = "Could not refresh the publish baseline: " + err.Error()
+		} else if ok {
+			result.baseline = &refreshed
 		}
 		return result
 	}

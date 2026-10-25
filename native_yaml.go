@@ -356,6 +356,32 @@ func importDraft(ctx context.Context, store NativeYAMLStore, proposedDir, curren
 	return bundle, full, legacyDetected, nil
 }
 
+// refreshPublishBaseline re-reads live HA after a publish. When baselineDir is
+// set and the store can pull, it also rewrites the local baseline snapshot, so
+// a restart does not reload the pre-publish baseline and reject the next
+// publish as stale. ok is false when the store cannot re-read HA.
+func refreshPublishBaseline(ctx context.Context, store ConfigPublisher, refs []ConfigRef, baselineDir string) (Bundle, bool, error) {
+	if puller, ok := store.(interface {
+		Pull(context.Context, string) (Bundle, error)
+	}); ok && baselineDir != "" {
+		bundle, err := puller.Pull(ctx, baselineDir)
+		return bundle, true, err
+	}
+	if reader, ok := store.(interface {
+		ReadAll(context.Context) (Bundle, error)
+	}); ok {
+		bundle, err := reader.ReadAll(ctx)
+		return bundle, true, err
+	}
+	if importer, ok := store.(interface {
+		Import(context.Context, []ConfigRef) (Bundle, error)
+	}); ok {
+		bundle, err := importer.Import(ctx, refs)
+		return bundle, true, err
+	}
+	return Bundle{}, false, nil
+}
+
 // Pull copies the configured native files to a local source snapshot and
 // returns the same parsed bundle that those files represent.
 func (s NativeYAMLStore) Pull(ctx context.Context, dir string) (Bundle, error) {

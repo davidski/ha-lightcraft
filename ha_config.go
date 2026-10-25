@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -50,7 +51,13 @@ func (s HAConfigStore) CheckConfig(ctx context.Context) error {
 	return nil
 }
 
+// Reload reloads automations last: their reload fires the controller's
+// automation_reloaded run, which must see the reloaded players and helpers.
+// Reloading scripts afterwards would stop the players that run just started.
 func (s HAConfigStore) Reload(ctx context.Context, kinds []ConfigKind) error {
+	order := map[ConfigKind]int{Helpers: 0, Scripts: 1, Automations: 2}
+	kinds = append([]ConfigKind(nil), kinds...)
+	sort.SliceStable(kinds, func(i, j int) bool { return order[kinds[i]] < order[kinds[j]] })
 	seen := map[string]bool{}
 	for _, kind := range kinds {
 		domain := map[ConfigKind]string{Scripts: "script", Automations: "automation", Helpers: "input_select"}[kind]

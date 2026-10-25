@@ -213,10 +213,14 @@ and preset/playlist definitions remain owned and previewed by the WLED app.
 5. Back up the imported state locally.
 6. Update only changed or explicitly approved entries; never replace an entire
    HA category.
-7. Reload the affected HA YAML domains.
+7. Reload the affected HA YAML domains, automations last: their reload runs
+   the assignment controller, which must see the reloaded players and helpers.
 8. Re-import and compare every affected entry.
 9. Restore the exact pre-publish files and reload them if any update,
    validation, reload, or verification fails.
+10. After success, re-pull live HA into the baseline directory as well as
+    memory, so a restarted editor does not reload the pre-publish baseline and
+    reject the next publish as stale.
 
 The assignment trust boundary rejects mixed content modes, malformed HA entity
 domains, and overlapping managed resources. A default schedule's start, refresh, and

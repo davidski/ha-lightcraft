@@ -38,6 +38,9 @@ func TestHAConfigStoreChecksAndReloadsNativeDomains(t *testing.T) {
 			t.Fatalf("missing request path %s in %#v", path, paths)
 		}
 	}
+	if last := paths[len(paths)-1]; last != "/api/services/automation/reload" {
+		t.Fatalf("automations must reload last so the controller sees reloaded players: %#v", paths)
+	}
 }
 
 func TestHAConfigStoreRejectsInvalidConfigCheck(t *testing.T) {
