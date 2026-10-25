@@ -1178,3 +1178,32 @@ func TestWebReloadsDraftChangedOutsideEditor(t *testing.T) {
 		t.Fatal("own write reported as an external change")
 	}
 }
+
+func TestWebSequencePageShowsStripAndStepTable(t *testing.T) {
+	dir := t.TempDir()
+	bundle := Bundle{Files: map[ConfigKind]Config{
+		Colors: {Kind: Colors, Data: map[string]any{"red": map[string]any{"name": "Red", "x": .64, "y": .33}}},
+	}}
+	if err := SaveBundle(dir, bundle); err != nil {
+		t.Fatal(err)
+	}
+	app, err := newWebApp(dir, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := app.handler()
+	postForm(t, handler, "/sequence", url.Values{
+		"token": {app.token}, "hash": {app.bundle.Hash}, "display_name": {"Red loop"}, "repeat": {"on"},
+		"step_color": {"red", "red"}, "step_brightness": {"100", "50"}, "step_hold": {"6", "4.5"}, "step_transition": {"0", "1"},
+	}, http.StatusSeeOther)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/?view=sequences&edit=red_loop", nil)
+	request.Host = "127.0.0.1:8080"
+	handler.ServeHTTP(response, request)
+	body := response.Body.String()
+	for _, want := range []string{`class="sequence-strip"`, "2 steps · 10.5 s loop", `id="cue-table"`, `class="cue-inspector"`, ">Add step<"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sequence page missing %q", want)
+		}
+	}
+}

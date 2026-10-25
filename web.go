@@ -127,6 +127,7 @@ type webColor struct {
 type webStep struct {
 	Name       string
 	Color      string
+	Hex        string
 	Brightness int
 	Hold       float64
 	Transition float64
@@ -143,6 +144,15 @@ type webPreviewStep struct {
 type webPreviewLight struct {
 	ID   string
 	Name string
+}
+
+// LoopSeconds is one pass through the steps; a fade runs inside its step's hold.
+func (s webSequence) LoopSeconds() string {
+	total := 0.0
+	for _, step := range s.Steps {
+		total += step.Hold
+	}
+	return strconv.FormatFloat(total, 'f', 1, 64)
 }
 
 type webSequence struct {
@@ -469,7 +479,7 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 		sequence := colorSequences(a.bundle)[id]
 		item := webSequence{ID: id, Name: sequence.Name, Repeat: sequence.Repeat}
 		for _, step := range sequence.Steps {
-			item.Steps = append(item.Steps, webStep{Name: step.Name, Color: webStepColor(a.bundle, step), Brightness: brightnessPercentValue(step.Brightness), Hold: step.Hold, Transition: step.Transition})
+			item.Steps = append(item.Steps, webStep{Name: step.Name, Color: webStepColor(a.bundle, step), Hex: previewRGBHex(currentCatalogStep(a.bundle, step)), Brightness: brightnessPercentValue(step.Brightness), Hold: step.Hold, Transition: step.Transition})
 		}
 		if edit == id {
 			item.PreviewSteps = make([]webPreviewStep, 0, len(sequence.Steps))

@@ -243,7 +243,7 @@ is for primary buttons, badges, and `strong`; summaries use 600.
 | Workspace | Structure |
 |---|---|
 | Colors | Catalog; editor with picker and numeric CIE coordinates. |
-| Sequences | Catalog; editor with the saved preview above the steps. |
+| Sequences | Catalog with a color strip per sequence; editor with the saved preview, then a step table beside the selected step's fields. |
 | Schedules | Catalog; editor grouped as Program, Light targets, Timing, Finish behavior; Live playback below the form. |
 | Agenda | One panel, date navigation, two weekly tables; schedule names link to editing. |
 | Home Assistant | Readiness and publish first; changes and YAML disclosures; import last. |
@@ -299,6 +299,25 @@ Rules:
   real outcome in text.
 - Disabled buttons stay visible when they explain readiness, with the reason
   beside them.
+
+## Sequence steps
+
+- The catalog shows each sequence's step colors as a strip sized by hold
+  time, with the step count and loop length in `.meta`. A step's transition
+  runs inside its hold, so the loop length is the sum of holds.
+- The editor lists steps in a table: step number, color chip and name,
+  brightness bar and percentage, transition, hold, and start time within the
+  pass. A summary line gives the step count, seconds per pass, and whether
+  the sequence loops.
+- Selecting a row (click, Enter, or Space) shows that step's fields in the
+  inspector beside the table, under a "Step N" heading and a swatch of its
+  color. The selected row uses the selected-entry treatment. Add, move, and
+  remove keep the selection on the affected step, and a step with a field
+  error is selected on load.
+- Update draft sits in the inspector and saves every step. Below 1000px the
+  inspector stacks under the table. Without JavaScript every step's fields
+  show and the table stays hidden.
+- Swatches, chips, and strips are the only places step colors appear.
 
 ## Sequence preview
 
