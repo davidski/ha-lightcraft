@@ -608,10 +608,12 @@ func assignmentHelper(a LightingAssignment) map[string]any {
 	return map[string]any{"name": a.Name + " playback", "options": []any{"idle", "running", "paused"}, "icon": "mdi:play-pause"}
 }
 
-// resolveLightingTargets expands groups to member lights. Regular schedules need
-// color lights; anyLight admits brightness-only lights for default schedules,
-// where HA applies brightness and ignores the color.
-func resolveLightingTargets(targets []string, states map[string]LightState, anyLight bool) ([]string, error) {
+// resolveLightingTargets expands groups to member lights, which regular
+// schedules store so overlap checks compare real lights; they also need color
+// lights. A default schedule (fallback) admits brightness-only lights, where HA
+// applies brightness and ignores the color, and keeps targets as entered so a
+// group follows its membership in HA; its members are still checked here.
+func resolveLightingTargets(targets []string, states map[string]LightState, fallback bool) ([]string, error) {
 	var result []string
 	seen, visiting := map[string]bool{}, map[string]bool{}
 	var add func(string) error
@@ -635,7 +637,7 @@ func resolveLightingTargets(targets []string, states map[string]LightState, anyL
 			}
 		} else {
 			modes := stringList(state.Attribute["supported_color_modes"])
-			if !anyLight && len(modes) > 0 && !supports(modes, "rgb", "rgbw", "rgbww", "xy", "hs") {
+			if !fallback && len(modes) > 0 && !supports(modes, "rgb", "rgbw", "rgbww", "xy", "hs") {
 				return fmt.Errorf("%s does not support color", id)
 			}
 			result = append(result, id)
@@ -647,6 +649,9 @@ func resolveLightingTargets(targets []string, states map[string]LightState, anyL
 		if err := add(id); err != nil {
 			return nil, err
 		}
+	}
+	if fallback {
+		return targets, nil
 	}
 	return result, nil
 }
@@ -764,7 +769,8 @@ func assignmentMinutes(a LightingAssignment, minute int) bool {
 }
 
 func assignmentsOverlap(a, b LightingAssignment) bool {
-	if !a.Enabled || !b.Enabled || a.Fallback != b.Fallback {
+	// Only one default exists (validateLighting), and it never conflicts.
+	if !a.Enabled || !b.Enabled || a.Fallback || b.Fallback {
 		return false
 	}
 	shared := false
@@ -832,6 +838,15 @@ func validateLighting(bundle Bundle) error {
 		if stringMustJSON(entries[ConfigRef{Scripts, sequencePrefix + id}]) != stringMustJSON(sequenceScript(s)) && !legacyRGBSequenceEntry(entries[ConfigRef{Scripts, sequencePrefix + id}]) {
 			return fmt.Errorf("sequence %s has unsupported script edits; preserve it outside the structured editor", id)
 		}
+	}
+	defaults := 0
+	for _, a := range assignments {
+		if a.Fallback {
+			defaults++
+		}
+	}
+	if defaults > 1 {
+		return fieldErrorf("fallback", "only one default schedule is allowed")
 	}
 	for id, a := range assignments {
 		if err := a.Validate(); err != nil {

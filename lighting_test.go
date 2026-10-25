@@ -235,8 +235,12 @@ func TestLightingGroupTargets(t *testing.T) {
 	if _, err := resolveLightingTargets([]string{"light.group"}, states, false); err == nil {
 		t.Fatal("non-color target accepted")
 	}
-	if targets, err := resolveLightingTargets([]string{"light.group"}, states, true); err != nil || len(targets) != 2 {
-		t.Fatalf("default rejected brightness-only light: %v %v", targets, err)
+	if targets, err := resolveLightingTargets([]string{"light.group"}, states, true); err != nil || strings.Join(targets, ",") != "light.group" {
+		t.Fatalf("default did not keep its group with a brightness-only member: %v %v", targets, err)
+	}
+	delete(states, "light.two")
+	if _, err := resolveLightingTargets([]string{"light.group"}, states, true); err == nil {
+		t.Fatal("default group with a missing member accepted")
 	}
 }
 
@@ -1221,8 +1225,9 @@ func TestFallbackAssignmentRules(t *testing.T) {
 	b := testFallbackBundle(t)
 	second := lightingAssignments(b)["exterior_default"]
 	second.ID, second.Name = "second_default", "Second default"
-	if _, err := saveLightingAssignment(b, second); err == nil || !strings.Contains(err.Error(), "overlap") {
-		t.Fatalf("overlapping defaults: %v", err)
+	second.Targets, second.Start, second.End = []string{"light.unrelated"}, "2026-01-01", "2026-01-02"
+	if _, err := saveLightingAssignment(b, second); err == nil || !strings.Contains(err.Error(), "only one default") {
+		t.Fatalf("second default: %v", err)
 	}
 	looping := lightingAssignments(b)["exterior_default"]
 	looping.Sequence = "christmas"

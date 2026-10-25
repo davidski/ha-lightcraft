@@ -143,11 +143,14 @@ assignments participate in the same resource-overlap checks, including a WLED
 select entity, so two assignments cannot contend for the same managed resource.
 
 A default schedule (`fallback: true` in the assignment variables) is a
-color-sequence assignment with the lowest priority. It never conflicts with
-regular assignments; only two defaults on the same light in overlapping
-windows are rejected. Unlike regular schedules, a default may target
-brightness-only lights (HA applies the brightness and ignores the color), so a
-mixed group such as the exterior lights can be one default. It must use a
+color-sequence assignment with the lowest priority, and a draft may hold at most
+one. It never conflicts with regular assignments. Unlike regular schedules,
+whose groups are expanded to member lights on save so overlap checks compare
+real lights, a default keeps its targets as entered: a group stays a group and
+follows its membership in HA without republishing (its members are still
+validated on save). A default may also target brightness-only lights (HA
+applies the brightness and ignores the color), so a mixed group such as the
+exterior lights can be the default. It must use a
 sequence that plays once, so it sets its
 lights and holds them rather than cycling. Because Lightcraft knows every
 assignment's lights when it generates YAML, the controller computes the
