@@ -141,6 +141,14 @@ time rules again. WLED and color
 assignments participate in the same resource-overlap checks, including a WLED
 select entity, so two assignments cannot contend for the same managed resource.
 
+The package also carries a derived `homeassistant.customize` block that sets a
+`targets` attribute (the assignment's lights) on each playback helper. It is
+regenerated from the assignment scripts on every package write and dropped on
+import, so it is never authored or diffed. HA-owned automations, such as the
+exterior default, read it to leave lights alone while a running or paused
+assignment owns them and light the rest. A helper without the attribute must
+be treated as owning everything.
+
 ## Compatibility and ownership
 
 Existing color-sequence assignments retain their data shape and generated
@@ -191,7 +199,8 @@ and preset/playlist definitions remain owned and previewed by the WLED app.
 5. Back up the imported state locally.
 6. Update only changed or explicitly approved entries; never replace an entire
    HA category.
-7. Reload the affected HA YAML domains.
+7. Reload the affected HA YAML domains, plus core config when scripts change
+   so the derived assignment `targets` customize applies.
 8. Re-import and compare every affected entry.
 9. Restore the exact pre-publish files and reload them if any update,
    validation, reload, or verification fails.

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadBundleCanonicalizesMapOrder(t *testing.T) {
@@ -236,5 +238,24 @@ func TestAutomationYAMLOrdersIdentityKeysFirst(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "  action:\n") || !strings.Contains(string(data), "  mode: single\n") {
 		t.Fatalf("automation YAML dropped fields:\n%s", data)
+	}
+}
+
+func TestPackageYAMLPublishesAssignmentTargets(t *testing.T) {
+	data, err := marshalPackageYAML(testLightingBundle(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	customize := root["homeassistant"].(map[string]any)["customize"].(map[string]any)
+	targets := customize["input_select."+assignmentPrefix+"exterior"].(map[string]any)["targets"].([]any)
+	if len(targets) != 4 || targets[3] != "light.front_door" {
+		t.Fatalf("targets = %#v", targets)
+	}
+	if _, err := parsePackageYAML(data); err != nil {
+		t.Fatalf("round trip: %v", err)
 	}
 }

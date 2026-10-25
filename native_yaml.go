@@ -251,6 +251,8 @@ func parsePackageYAML(data []byte) (map[ConfigKind]any, error) {
 		"input_select": Helpers,
 		"script":       Scripts,
 	}
+	// homeassistant.customize is derived from assignments on write.
+	delete(root, "homeassistant")
 	if len(root) != len(keys) {
 		return nil, errors.New("package must contain only automation, input_select, and script")
 	}

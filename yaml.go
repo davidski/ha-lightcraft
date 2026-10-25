@@ -194,6 +194,15 @@ func marshalPackageYAML(bundle Bundle) ([]byte, error) {
 		"input_select": packageData(bundle, Helpers, map[string]any{}),
 		"script":       packageData(bundle, Scripts, map[string]any{}),
 	}
+	// Expose each assignment's lights on its playback helper so HA-owned
+	// automations (the exterior default) can skip lights a player owns.
+	if assignments := lightingAssignments(bundle); len(assignments) > 0 {
+		customize := map[string]any{}
+		for id, a := range assignments {
+			customize["input_select."+assignmentPrefix+id] = map[string]any{"targets": assignmentTargetLights(a)}
+		}
+		value["homeassistant"] = map[string]any{"customize": customize}
+	}
 	return yaml.Marshal(normalizeYAML(value))
 }
 

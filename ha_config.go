@@ -64,6 +64,12 @@ func (s HAConfigStore) Reload(ctx context.Context, kinds []ConfigKind) error {
 		if err := s.request(ctx, http.MethodPost, "/api/services/"+domain+"/reload", map[string]any{}, nil); err != nil {
 			return fmt.Errorf("reload %s: %w", domain, err)
 		}
+		if kind == Scripts {
+			// Assignment targets live in package customize; core reload applies it.
+			if err := s.request(ctx, http.MethodPost, "/api/services/homeassistant/reload_core_config", map[string]any{}, nil); err != nil {
+				return fmt.Errorf("reload core config: %w", err)
+			}
+		}
 	}
 	return nil
 }
