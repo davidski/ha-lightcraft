@@ -489,15 +489,15 @@ func TestWebDraftEditPersists(t *testing.T) {
 	}
 	postForm(t, handler, "/color", url.Values{
 		"token": {app.token}, "hash": {app.bundle.Hash}, "id": {"blue"}, "display_name": {"Blue"}, "x": {"0.25"}, "y": {"0.25"},
-	}, http.StatusConflict)
+	}, http.StatusSeeOther)
 	onDisk, err := LoadBundle(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	blue, blueOK := colorDefinitions(onDisk)["blue"]
 	yellow, yellowOK := colorDefinitions(onDisk)["yellow"]
-	if !blueOK || blue.X != .2 || !yellowOK || yellow.Name != "Yellow" {
-		t.Fatal("save overwrote an external draft edit")
+	if !blueOK || blue.X != .25 || !yellowOK || yellow.Name != "Yellow" {
+		t.Fatal("save was not applied on top of the external draft edit")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/", nil)
@@ -1111,5 +1111,70 @@ func postForm(t *testing.T, handler http.Handler, path string, values url.Values
 	handler.ServeHTTP(response, request)
 	if response.Code != want {
 		t.Fatalf("POST %s status = %d, want %d: %s", path, response.Code, want, response.Body.String())
+	}
+}
+
+func TestWebReloadsDraftChangedOutsideEditor(t *testing.T) {
+	dir := t.TempDir()
+	bundle := Bundle{Files: map[ConfigKind]Config{
+		Colors: {Kind: Colors, Data: map[string]any{"red": map[string]any{"name": "Red", "x": .64, "y": .33}}},
+	}}
+	if err := SaveBundle(dir, bundle); err != nil {
+		t.Fatal(err)
+	}
+	app, err := newWebApp(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher := &webTestPublisher{}
+	app.publisher, app.baselineReady = publisher, true
+	handler := app.handler()
+	staleHash := app.bundle.Hash
+
+	// A CLI import rewrites the draft underneath the running app.
+	external, err := upsertColor(app.bundle, "violet", ColorDefinition{Name: "Violet", X: .25, Y: .1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveBundle(dir, external); err != nil {
+		t.Fatal(err)
+	}
+
+	// Publish from the stale page is not sent; the reloaded draft is shown.
+	postForm(t, handler, "/publish", url.Values{"token": {app.token}, "hash": {staleHash}, "confirmation": {"PUBLISH"}}, http.StatusSeeOther)
+	if publisher.calls != 0 || !strings.Contains(app.message, webReloadedMessage) {
+		t.Fatalf("stale publish: calls=%d message=%q", publisher.calls, app.message)
+	}
+	if _, ok := colorDefinitions(app.bundle)["violet"]; !ok {
+		t.Fatal("external change was not loaded")
+	}
+
+	// An edit from a stale page is applied on top of the reloaded draft.
+	if err := SaveBundle(dir, bundle); err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, handler, "/color", url.Values{
+		"token": {app.token}, "hash": {app.bundle.Hash}, "display_name": {"Blue"}, "x": {"0.15"}, "y": {"0.06"},
+	}, http.StatusSeeOther)
+	colors := colorDefinitions(app.bundle)
+	if _, ok := colors["blue"]; !ok || colors["violet"].Name != "" {
+		t.Fatalf("edit was not rebased onto the reloaded draft: %v", colors)
+	}
+	disk, err := LoadBundle(dir)
+	if err != nil || disk.Hash != app.bundle.Hash {
+		t.Fatalf("edit was not saved: %v", err)
+	}
+
+	// The app's own write is not mistaken for an external change. The first
+	// load shows the edit's flash message; the second must be clean.
+	var response *httptest.ResponseRecorder
+	for range 2 {
+		response = httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.Host = "127.0.0.1:8080"
+		handler.ServeHTTP(response, request)
+	}
+	if strings.Contains(response.Body.String(), webReloadedMessage) {
+		t.Fatal("own write reported as an external change")
 	}
 }

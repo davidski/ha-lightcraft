@@ -55,9 +55,15 @@ type webApp struct {
 	pendingSchedule    *webAssignment
 	pendingColor       *webColor
 	pendingSequence    *webSequence
+	// Disk hashes last loaded or written by this app; a difference means a
+	// CLI import or publish changed the files underneath it.
+	diskDraftHash    string
+	diskBaselineHash string
 }
 
-var errWebDraftChanged = errors.New("draft files changed outside the web editor; restart to load them")
+var errWebDraftChanged = errors.New("draft files changed outside the web editor; reload the page")
+
+const webReloadedMessage = "Loaded changes made outside the web editor."
 
 func forwardedWebPrefix(r *http.Request) string {
 	prefix := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix"))
@@ -323,7 +329,50 @@ func newWebAppWithReferences(draftDir, baselineDir, referencesDir string, filePa
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("create web session: %w", err)
 	}
-	return &webApp{draftDir: draftDir, baselineDir: baselineDir, allowedWebHosts: configuredWebHosts(), filePaths: filePaths, colorsDir: referencesDir, bundle: bundle, baseline: baseline, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != "" && len(baseline.Files) > 0}, nil
+	app := &webApp{draftDir: draftDir, baselineDir: baselineDir, allowedWebHosts: configuredWebHosts(), filePaths: filePaths, colorsDir: referencesDir, bundle: bundle, baseline: baseline, token: hex.EncodeToString(tokenBytes), baselineReady: baselineDir != "" && len(baseline.Files) > 0}
+	app.diskDraftHash, app.diskBaselineHash = bundle.Hash, baseline.Hash
+	return app, nil
+}
+
+// syncFromDisk reloads the draft or baseline when files changed outside the
+// web editor since it last loaded or wrote them. It reports whether the
+// draft was reloaded. Callers hold a.mu.
+func (a *webApp) syncFromDisk() (bool, error) {
+	draftChanged := false
+	disk, err := LoadBundleAtWithReferences(a.draftDir, a.colorsDir, a.filePaths)
+	if err != nil {
+		return false, err
+	}
+	if disk.Hash != a.diskDraftHash {
+		if err := ValidateBundle(disk); err != nil {
+			return false, err
+		}
+		a.bundle, a.diskDraftHash, draftChanged = disk, disk.Hash, true
+		a.pendingSchedule, a.pendingColor, a.pendingSequence = nil, nil, nil
+	}
+	if a.baselineDir != "" {
+		baseline, err := loadBaselineBundle(a.baselineDir, a.filePaths)
+		if err != nil {
+			return draftChanged, err
+		}
+		if baseline.Hash != a.diskBaselineHash {
+			a.baseline, a.diskBaselineHash = baseline, baseline.Hash
+			a.refs, a.baselineReady = bundleRefs(baseline), len(baseline.Files) > 0
+		}
+	}
+	return draftChanged, nil
+}
+
+// recordDiskState marks the current files as this app's own writes.
+func (a *webApp) recordDiskState() {
+	if disk, err := LoadBundleAtWithReferences(a.draftDir, a.colorsDir, a.filePaths); err == nil {
+		a.diskDraftHash = disk.Hash
+	}
+	if a.baselineDir != "" {
+		if baseline, err := loadBaselineBundle(a.baselineDir, a.filePaths); err == nil {
+			a.diskBaselineHash = baseline.Hash
+		}
+	}
 }
 
 func (a *webApp) handler() http.Handler {
@@ -381,6 +430,11 @@ func (a *webApp) index(w http.ResponseWriter, r *http.Request) {
 	prefix := forwardedWebPrefix(r)
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if reloaded, err := a.syncFromDisk(); err != nil {
+		a.message, a.messageError = "Could not load draft changes made outside the web editor: "+err.Error(), true
+	} else if reloaded {
+		a.message, a.messageError = webReloadedMessage, false
+	}
 	page, err := a.page(view, r.URL.Query().Get("edit"), r.URL.Query().Get("date"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -671,11 +725,26 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success, fai
 		http.Error(w, "invalid session token", http.StatusForbidden)
 		return
 	}
-	if r.Form.Get("hash") != a.bundle.Hash {
-		http.Error(w, "draft changed; reload the page", http.StatusConflict)
+	reloaded, syncErr := a.syncFromDisk()
+	if syncErr != nil {
+		http.Error(w, "could not load draft changes made outside the web editor: "+syncErr.Error(), http.StatusConflict)
+		return
+	}
+	if r.Form.Get("hash") != a.bundle.Hash && (!reloaded || !persist) {
+		if !reloaded {
+			http.Error(w, "draft changed; reload the page", http.StatusConflict)
+			return
+		}
+		// Import and publish act on the reviewed diff; show the reloaded one.
+		a.message, a.messageError = webReloadedMessage+" Review them and try again.", true
+		http.Redirect(w, r, webPath(forwardedWebPrefix(r), "/?view="+url.QueryEscape(view)), http.StatusSeeOther)
 		return
 	}
 	a.message, a.messageError, a.errorField, a.fieldMessage = "", false, "", ""
+	if reloaded {
+		// Item edits replace whole entries, so apply them to the reloaded draft.
+		a.message = webReloadedMessage + " " + success
+	}
 	next, err := mutate(a.bundle, r.Form)
 	if err == nil && persist {
 		err = a.persistDraft(next)
@@ -700,6 +769,7 @@ func (a *webApp) post(w http.ResponseWriter, r *http.Request, view, success, fai
 		}
 	} else {
 		a.bundle = next
+		a.recordDiskState()
 		if a.message == "" {
 			a.message = success
 		}

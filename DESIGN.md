@@ -154,7 +154,11 @@ HA package path and guarded publisher.
 The web Home Assistant workspace leads with local publish status and a summary
 of added, updated, or removed sequences and schedules. Typing PUBLISH approves
 every removal in that diff; the CLI and TUI approve removals only through
-`--delete`. Package changes appear
+`--delete`. The web editor rechecks the on-disk draft and baseline on
+every page load and form post and reloads them when a CLI import or publish
+changed them. An item edit submitted from a stale page is applied to the
+reloaded draft; import and publish instead return to the reloaded page for
+review. Package changes appear
 in an initially open, full-width disclosure only when present; generated YAML
 is collapsed by default. Local status does not claim the live HA state is in
 sync. Import is a separate lower section whose disclosure reveals the existing
