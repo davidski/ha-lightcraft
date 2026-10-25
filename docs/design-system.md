@@ -15,11 +15,11 @@ and scrollbars match.
 
 ## Where values live
 
-- [`web.html`](../web.html) defines every token as a CSS custom property in the
-  `:root` rule at the top of its `<style>` block. The styles for the sequence
-  preview live in the `preview` template at the end of the same file and use
+- [`web.css`](../web.css) defines every token as a CSS custom property in the
+  `:root` rule at the top of the file; `web.go` embeds it and inlines it into
+  `web.html`'s `<style>` block. The sequence preview styles live in the same file and use
   the same tokens.
-- The same `<head>` loads IBM Plex Sans and Plex Mono from Bunny Fonts.
+- `web.html`'s `<head>` loads IBM Plex Sans and Plex Mono from Bunny Fonts.
 - [`theme_contrast_test.go`](../theme_contrast_test.go) reads those tokens and
   checks the [contrast matrix](#contrast).
 

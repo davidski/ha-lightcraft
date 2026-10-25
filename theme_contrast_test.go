@@ -10,13 +10,13 @@ import (
 
 // TestThemeContrast enforces the contrast matrix in docs/design-system.md.
 func TestThemeContrast(t *testing.T) {
-	raw, err := os.ReadFile("web.html")
+	raw, err := os.ReadFile("web.css")
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := regexp.MustCompile(`:root\{[^}]*\}`).Find(raw)
+	root := regexp.MustCompile(`:root \{[^}]*\}`).Find(raw)
 	tokens := map[string]string{}
-	for _, m := range regexp.MustCompile(`--([a-z-]+):(#[0-9a-f]{6})`).FindAllSubmatch(root, -1) {
+	for _, m := range regexp.MustCompile(`--([a-z-]+): (#[0-9a-f]{6})`).FindAllSubmatch(root, -1) {
 		tokens[string(m[1])] = string(m[2])
 	}
 	surfaces := []string{"bg", "panel", "inset", "field", "code"}

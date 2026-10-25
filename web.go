@@ -1220,7 +1220,10 @@ func openWebBrowser(address string) error {
 //go:embed web.html
 var webHTML string
 
+//go:embed web.css
+var webCSS string
+
 var webTemplate = template.Must(template.New("web").Funcs(template.FuncMap{
 	"brightness": previewBrightness,
 	"opacity":    func(brightness int) string { return strconv.FormatFloat(float64(brightness)/255, 'f', 3, 64) },
-}).Parse(webHTML))
+}).Parse(webHTML + `{{define "css"}}` + webCSS + `{{end}}`))
