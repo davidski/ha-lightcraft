@@ -614,6 +614,7 @@ type scheduleAgendaItem struct {
 type scheduleAgendaDay struct {
 	Date    string
 	Weekday string
+	Today   bool
 	Items   []scheduleAgendaItem
 }
 
@@ -634,10 +635,11 @@ func parseAgendaDate(value string) time.Time {
 
 func scheduleAgenda(assignments map[string]LightingAssignment, start time.Time) []scheduleAgendaDay {
 	start = normalizeAgendaDate(start)
+	today := normalizeAgendaDate(time.Now())
 	result := make([]scheduleAgendaDay, 0, scheduleAgendaDays)
 	for offset := 0; offset < scheduleAgendaDays; offset++ {
 		date := start.AddDate(0, 0, offset)
-		day := scheduleAgendaDay{Date: date.Format("Jan 2, 2006"), Weekday: date.Format("Mon")}
+		day := scheduleAgendaDay{Date: date.Format("Jan 2, 2006"), Weekday: date.Format("Mon"), Today: date.Equal(today)}
 		for _, assignment := range assignments {
 			if assignment.Enabled && assignmentDateActive(assignment, date) {
 				day.Items = append(day.Items, scheduleAgendaItem{

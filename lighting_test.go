@@ -1184,3 +1184,12 @@ func TestRegenerateAssignmentControlsRepairsHandAddedPlayer(t *testing.T) {
 		t.Fatalf("regenerated bundle differs from editor-saved bundle")
 	}
 }
+
+func TestScheduleAgendaMarksToday(t *testing.T) {
+	agenda := scheduleAgenda(nil, time.Now().AddDate(0, 0, -1))
+	for i, day := range agenda {
+		if day.Today != (i == 1) {
+			t.Fatalf("day %d (%s) Today = %v", i, day.Date, day.Today)
+		}
+	}
+}

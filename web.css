@@ -486,6 +486,39 @@ button:disabled {
   font-weight: 400;
 }
 
+.agenda-table tr.today>* {
+  background: var(--selected);
+  border-top-color: var(--accent-soft-line);
+}
+
+.agenda-table tr.today+tr>* {
+  border-top-color: var(--accent-soft-line);
+}
+
+.agenda-table tr.today th {
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--selected-text);
+}
+
+.agenda-table tr.today th span {
+  color: var(--selected-text);
+}
+
+.agenda-table th .today-pill {
+  display: inline-block;
+  margin-left: .5rem;
+  padding: 0 .375rem;
+  border: 1px solid var(--accent-soft-line);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: .625rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  vertical-align: .125rem;
+}
+
 .agenda-item {
   display: flex;
   gap: .625rem;
