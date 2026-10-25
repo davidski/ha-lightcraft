@@ -50,6 +50,9 @@ type LightingAssignment struct {
 	Enabled  bool         `json:"enabled"`
 	WLED     *WLEDProgram `json:"wled,omitempty"`
 	AllDay   bool         `json:"all_day,omitempty"`
+	// Fallback (shown as Default) lights only the targets no other running or
+	// paused assignment owns, so it never conflicts with regular assignments.
+	Fallback bool `json:"fallback,omitempty"`
 }
 
 var entityName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -79,6 +82,9 @@ func (a LightingAssignment) Validate() error {
 		return fieldErrorf("schedule_title", "assignment needs a name")
 	}
 	if a.WLED != nil {
+		if a.Fallback {
+			return fieldErrorf("fallback", "default schedules use a color sequence, not WLED")
+		}
 		if len(a.Targets) > 0 || a.Sequence != "" {
 			return fmt.Errorf("WLED assignments cannot include a color sequence or Hue lights")
 		}
@@ -331,26 +337,33 @@ func assignmentScript(a LightingAssignment) map[string]any {
 			},
 		}
 	}
+	// A default player receives its unowned lights from the controller.
+	targets, mode := "{{ assignment.targets }}", "single"
+	var sequence []any
+	if a.Fallback {
+		targets, mode = "{{ lights }}", "restart"
+		sequence = append(sequence, map[string]any{"condition": "template", "value_template": "{{ lights | count > 0 }}"})
+	}
 	return map[string]any{
-		"alias": a.Name, "mode": "single", "max_exceeded": "silent",
+		"alias": a.Name, "mode": mode, "max_exceeded": "silent",
 		"variables": map[string]any{"assignment": jsonValue(a)},
-		"sequence": []any{
+		"sequence": append(sequence,
 			map[string]any{"action": "script." + sequencePrefix + a.Sequence, "response_variable": "palette"},
-			map[string]any{"repeat": map[string]any{"for_each": "{{ assignment.targets }}", "sequence": []any{map[string]any{"if": "{{ 'Solid' in (state_attr(repeat.item, 'effect_list') or []) }}", "then": []any{map[string]any{"action": "light.turn_on", "target": map[string]any{"entity_id": "{{ repeat.item }}"}, "data": map[string]any{"effect": "Solid"}}}}}}},
+			map[string]any{"repeat": map[string]any{"for_each": targets, "sequence": []any{map[string]any{"if": "{{ 'Solid' in (state_attr(repeat.item, 'effect_list') or []) }}", "then": []any{map[string]any{"action": "light.turn_on", "target": map[string]any{"entity_id": "{{ repeat.item }}"}, "data": map[string]any{"effect": "Solid"}}}}}}},
 			map[string]any{"repeat": map[string]any{
 				"while": "{{ true }}",
 				"sequence": []any{
 					map[string]any{"repeat": map[string]any{
 						"for_each": "{{ palette.steps }}",
 						"sequence": []any{
-							map[string]any{"action": "light.turn_on", "target": map[string]any{"entity_id": "{{ assignment.targets }}"}, "data": "{{ dict(xy_color=repeat.item.xy, brightness=repeat.item.brightness, transition=repeat.item.transition) }}"},
+							map[string]any{"action": "light.turn_on", "target": map[string]any{"entity_id": targets}, "data": "{{ dict(xy_color=repeat.item.xy, brightness=repeat.item.brightness, transition=repeat.item.transition) }}"},
 							map[string]any{"delay": map[string]any{"seconds": "{{ repeat.item.hold }}"}},
 						},
 					}},
 					map[string]any{"if": "{{ not palette.repeat }}", "then": []any{map[string]any{"wait_template": "{{ false }}"}}},
 				},
 			}},
-		},
+		),
 	}
 }
 
@@ -380,39 +393,84 @@ func assignmentResources(a LightingAssignment) []string {
 	return resources
 }
 
-func assignmentStopActions(a LightingAssignment) []any {
+func assignmentStopActions(a LightingAssignment, lights any) []any {
 	player := "script." + assignmentPrefix + a.ID
 	status := "input_select." + assignmentPrefix + a.ID
 	stop := []any{map[string]any{"action": "script.turn_off", "target": map[string]any{"entity_id": player}}}
 	if a.Finish == "off" {
-		stop = append(stop, map[string]any{"action": "light.turn_off", "target": map[string]any{"entity_id": assignmentTargetLights(a)}})
+		off := any(map[string]any{"action": "light.turn_off", "target": map[string]any{"entity_id": lights}})
+		if a.Fallback {
+			off = map[string]any{"if": "{{ free | count > 0 }}", "then": []any{off}}
+		}
+		stop = append(stop, off)
 	}
 	stop = append(stop, map[string]any{"if": "{{ not is_state('" + status + "', 'paused') }}", "then": []any{map[string]any{"action": "input_select.select_option", "target": map[string]any{"entity_id": status}, "data": map[string]any{"option": "idle"}}}})
 	return []any{map[string]any{"if": "{{ is_state('" + player + "', 'on') or is_state('" + status + "', 'running') }}", "then": stop}}
 }
 
 // One short controller serializes handoffs: stop every expired player before
-// starting any new one. Playback itself runs independently in per-target scripts.
+// starting any new one, then let defaults fill the lights no player owns.
+// Playback itself runs independently in per-target scripts. Queued mode keeps
+// the release trigger fired by this run's own stops for a follow-up run.
 func lightingController(bundle Bundle) map[string]any {
 	assignments := lightingAssignments(bundle)
-	var stopActions, startActions []any
-	var statusIDs []string
+	var stopActions, startActions, fallbackActions []any
+	var statusIDs, regularIDs []string
+	var owned []string
+	for _, id := range lightingIDs(bundle, 1) {
+		status := "input_select." + assignmentPrefix + id
+		statusIDs = append(statusIDs, status)
+		if a := assignments[id]; !a.Fallback {
+			regularIDs = append(regularIDs, status)
+			owned = append(owned, "(expand("+stringMustJSON(assignmentTargetLights(a))+") | map(attribute='entity_id') | list if not is_state('"+status+"', 'idle') else [])")
+		}
+	}
+	free := "{{ expand(assignment.targets) | map(attribute='entity_id') | list }}"
+	if len(owned) > 0 {
+		free = "{% set owned = " + strings.Join(owned, " + ") + " %}{{ expand(assignment.targets) | map(attribute='entity_id') | reject('in', owned) | list }}"
+	}
 	for _, id := range lightingIDs(bundle, 1) {
 		a := assignments[id]
 		status, player := "input_select."+assignmentPrefix+id, "script."+assignmentPrefix+id
-		statusIDs = append(statusIDs, status)
 		eligible := []any{map[string]any{"condition": "template", "value_template": assignmentActiveTemplate()}, map[string]any{"condition": "template", "value_template": "{{ not is_state('" + status + "', 'paused') }}"}}
+		notEligible := []any{map[string]any{"condition": "not", "conditions": []any{map[string]any{"condition": "and", "conditions": eligible}}}}
+		running := map[string]any{"action": "input_select.select_option", "target": map[string]any{"entity_id": status}, "data": map[string]any{"option": "running"}}
+		if a.Fallback {
+			// Separate blocks: free reads assignment.
+			variables := map[string]any{"variables": map[string]any{"assignment": jsonValue(a)}}
+			start := map[string]any{"action": "script.turn_on", "target": map[string]any{"entity_id": player}, "data": map[string]any{"variables": map[string]any{"lights": "{{ free }}"}}}
+			refresh := []any{map[string]any{"condition": "or", "conditions": []any{
+				map[string]any{"condition": "state", "entity_id": player, "state": "off"},
+				map[string]any{"condition": "trigger", "id": "release"},
+			}}}
+			fallbackActions = append(fallbackActions, variables, map[string]any{"variables": map[string]any{"free": free}}, map[string]any{"choose": []any{
+				map[string]any{"conditions": notEligible, "sequence": assignmentStopActions(a, "{{ free }}")},
+				map[string]any{"conditions": append(append([]any(nil), eligible...), refresh...), "sequence": []any{running, start}},
+			}})
+			continue
+		}
 		conditions := append(append([]any(nil), eligible...), map[string]any{"condition": "state", "entity_id": player, "state": "off"})
-		branch := map[string]any{"conditions": conditions, "sequence": []any{map[string]any{"action": "input_select.select_option", "target": map[string]any{"entity_id": status}, "data": map[string]any{"option": "running"}}, map[string]any{"action": "script.turn_on", "target": map[string]any{"entity_id": player}}}}
+		branch := map[string]any{"conditions": conditions, "sequence": []any{running, map[string]any{"action": "script.turn_on", "target": map[string]any{"entity_id": player}}}}
 		variables := map[string]any{"variables": map[string]any{"assignment": jsonValue(a)}}
-		stopActions = append(stopActions, variables, map[string]any{"if": []any{map[string]any{"condition": "not", "conditions": []any{map[string]any{"condition": "and", "conditions": eligible}}}}, "then": assignmentStopActions(a)})
+		stopActions = append(stopActions, variables, map[string]any{"if": notEligible, "then": assignmentStopActions(a, assignmentTargetLights(a))})
 		startActions = append(startActions, variables, map[string]any{"choose": []any{branch}})
 	}
 	triggers := []any{map[string]any{"trigger": "homeassistant", "event": "start"}, map[string]any{"trigger": "time_pattern", "minutes": "/5"}, map[string]any{"trigger": "event", "event_type": "automation_reloaded"}}
+	var actions []any
 	if len(statusIDs) > 0 {
 		triggers = append(triggers, map[string]any{"trigger": "state", "entity_id": statusIDs, "to": "paused"}, map[string]any{"trigger": "state", "entity_id": statusIDs, "from": "paused"})
+		// Pauses last one night: clear them at midnight before evaluating schedules.
+		triggers = append(triggers, map[string]any{"trigger": "time", "at": "00:00:00", "id": "midnight"})
+		actions = append(actions, map[string]any{"if": []any{map[string]any{"condition": "trigger", "id": "midnight"}}, "then": []any{map[string]any{"repeat": map[string]any{
+			"for_each": "{{ " + stringMustJSON(statusIDs) + " | select('is_state', 'paused') | list }}",
+			"sequence": []any{map[string]any{"action": "input_select.select_option", "target": map[string]any{"entity_id": "{{ repeat.item }}"}, "data": map[string]any{"option": "idle"}}},
+		}}}})
 	}
-	return map[string]any{"id": lightingControllerID, "alias": "Lighting assignment schedules", "mode": "single", "triggers": triggers, "actions": append(stopActions, startActions...)}
+	if len(fallbackActions) > 0 && len(regularIDs) > 0 {
+		triggers = append(triggers, map[string]any{"trigger": "state", "entity_id": regularIDs, "to": "idle", "id": "release"})
+	}
+	actions = append(append(append(actions, stopActions...), startActions...), fallbackActions...)
+	return map[string]any{"id": lightingControllerID, "alias": "Lighting assignment schedules", "mode": "queued", "max": 10, "triggers": triggers, "actions": actions}
 }
 
 func putLightingScript(bundle *Bundle, id string, value map[string]any) {
@@ -609,6 +667,7 @@ type scheduleAgendaItem struct {
 	Name    string
 	Time    string
 	Targets string
+	Default bool
 }
 
 type scheduleAgendaDay struct {
@@ -647,10 +706,15 @@ func scheduleAgenda(assignments map[string]LightingAssignment, start time.Time) 
 					Name:    assignment.Name,
 					Time:    assignmentTimeLabel(assignment),
 					Targets: assignmentTargetLabel(assignment),
+					Default: assignment.Fallback,
 				})
 			}
 		}
+		// Defaults list last: they only fill what the other schedules leave.
 		sort.SliceStable(day.Items, func(i, j int) bool {
+			if day.Items[i].Default != day.Items[j].Default {
+				return day.Items[j].Default
+			}
 			return strings.ToLower(day.Items[i].Name) < strings.ToLower(day.Items[j].Name)
 		})
 		result = append(result, day)
@@ -697,7 +761,7 @@ func assignmentMinutes(a LightingAssignment, minute int) bool {
 }
 
 func assignmentsOverlap(a, b LightingAssignment) bool {
-	if !a.Enabled || !b.Enabled {
+	if !a.Enabled || !b.Enabled || a.Fallback != b.Fallback {
 		return false
 	}
 	shared := false
@@ -773,6 +837,10 @@ func validateLighting(bundle Bundle) error {
 		if a.WLED == nil {
 			if _, ok := sequences[a.Sequence]; !ok {
 				return fmt.Errorf("assignment %s references missing sequence %s", id, a.Sequence)
+			}
+			// A looping default would keep driving lights an assignment has taken.
+			if a.Fallback && sequences[a.Sequence].Repeat {
+				return fieldErrorf("sequence", "%s is a default; choose a sequence that plays once", a.Name)
 			}
 		}
 		if stringMustJSON(entries[ConfigRef{Scripts, assignmentPrefix + id}]) != stringMustJSON(assignmentScript(a)) || stringMustJSON(entries[ConfigRef{Helpers, assignmentPrefix + id}]) != stringMustJSON(assignmentHelper(a)) {

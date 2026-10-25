@@ -33,7 +33,7 @@ func TestHAConfigStoreChecksAndReloadsNativeDomains(t *testing.T) {
 	for _, path := range paths {
 		got[path] = true
 	}
-	for _, path := range []string{"/api/config/core/check_config", "/api/services/script/reload", "/api/services/automation/reload", "/api/services/input_select/reload", "/api/services/homeassistant/reload_core_config"} {
+	for _, path := range []string{"/api/config/core/check_config", "/api/services/script/reload", "/api/services/automation/reload", "/api/services/input_select/reload"} {
 		if !got[path] {
 			t.Fatalf("missing request path %s in %#v", path, paths)
 		}

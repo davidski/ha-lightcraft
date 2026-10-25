@@ -670,6 +670,10 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	once := ColorSequence{ID: "warm_once", Name: "Warm once", Steps: []ColorStep{{Name: "Warm", XY: []float64{.423, .399}, Brightness: 255, Hold: 1, Transition: 1}}}
+	if app.bundle, err = saveColorSequence(app.bundle, once); err != nil {
+		t.Fatal(err)
+	}
 	assignment := LightingAssignment{ID: "porch", Name: "Porch", Sequence: "red_loop", Targets: []string{"light.one"}, Start: "12-01", End: "12-31", On: "sunset", Off: "00:00", Finish: "off", Enabled: true}
 	app.bundle, err = saveLightingAssignment(app.bundle, assignment)
 	if err != nil {
@@ -789,6 +793,13 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	}, http.StatusSeeOther)
 	if saved := lightingAssignments(app.bundle)["unpadded_web"]; saved.Start != "01-15" || saved.End != "02-03" {
 		t.Fatalf("web saved dates = %q–%q, want 01-15–02-03", saved.Start, saved.End)
+	}
+	postForm(t, handler, "/schedule", url.Values{
+		"token": {app.token}, "hash": {app.bundle.Hash}, "id": {"porch_default"}, "schedule_title": {"Porch default"}, "sequence": {"warm_once"}, "fallback": {"on"},
+		"targets": {"light.one"}, "start": {"1-1"}, "end": {"12-31"}, "on": {"sunset"}, "off": {"00:00"}, "finish": {"off"}, "enabled": {"on"},
+	}, http.StatusSeeOther)
+	if saved := lightingAssignments(app.bundle)["porch_default"]; !saved.Fallback {
+		t.Fatalf("web default not saved as fallback: %#v", saved)
 	}
 	api.states["input_select.lighting_assignment_porch"] = LightState{EntityID: "input_select.lighting_assignment_porch", State: "idle", Attribute: map[string]any{}}
 	postForm(t, handler, "/playback", url.Values{

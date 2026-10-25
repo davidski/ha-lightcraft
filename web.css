@@ -534,6 +534,11 @@ button:disabled {
   display: inline;
 }
 
+.agenda-default strong {
+  font-weight: 500;
+  color: var(--muted);
+}
+
 @media(max-width:760px) {
   .agenda-columns {
     grid-template-columns: 1fr;

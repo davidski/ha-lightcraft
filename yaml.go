@@ -57,6 +57,17 @@ func LoadBundleAt(dir string, filePaths map[ConfigKind][]string) (Bundle, error)
 	return LoadBundleAtWithReferences(dir, dir, filePaths)
 }
 
+// LoadDraftBundle loads a draft and regenerates its derived assignment
+// controls, so drafts written by an older Lightcraft carry the current
+// controller. Baselines are loaded as-is because they mirror live HA.
+func LoadDraftBundle(dir, colorsDir string, filePaths map[ConfigKind][]string) (Bundle, error) {
+	bundle, err := LoadBundleAtWithReferences(dir, colorsDir, filePaths)
+	if err != nil {
+		return bundle, err
+	}
+	return regenerateAssignmentControls(bundle)
+}
+
 func LoadBundleAtWithReferences(dir, colorsDir string, filePaths map[ConfigKind][]string) (Bundle, error) {
 	if len(filePaths) == 0 {
 		bundle, err := LoadBundle(dir)
@@ -193,15 +204,6 @@ func marshalPackageYAML(bundle Bundle) ([]byte, error) {
 		"automation":   packageData(bundle, Automations, []any{}),
 		"input_select": packageData(bundle, Helpers, map[string]any{}),
 		"script":       packageData(bundle, Scripts, map[string]any{}),
-	}
-	// Expose each assignment's lights on its playback helper so HA-owned
-	// automations (the exterior default) can skip lights a player owns.
-	if assignments := lightingAssignments(bundle); len(assignments) > 0 {
-		customize := map[string]any{}
-		for id, a := range assignments {
-			customize["input_select."+assignmentPrefix+id] = map[string]any{"targets": assignmentTargetLights(a)}
-		}
-		value["homeassistant"] = map[string]any{"customize": customize}
 	}
 	return yaml.Marshal(normalizeYAML(value))
 }

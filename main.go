@@ -104,7 +104,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "publish requires --baseline")
 			os.Exit(1)
 		}
-		draftBundle, err := LoadBundleAtWithReferences(*draft, colorsDir, filePaths)
+		draftBundle, err := LoadDraftBundle(*draft, colorsDir, filePaths)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -145,7 +145,7 @@ func main() {
 		fmt.Println("Published and verified.")
 		return
 	}
-	bundle, err := LoadBundleAtWithReferences(*draft, colorsDir, filePaths)
+	bundle, err := LoadDraftBundle(*draft, colorsDir, filePaths)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -618,7 +618,7 @@ func TestScheduleFormSeparatorsAlign(t *testing.T) {
 			id   string
 			rows int
 		}{
-			{id: "exterior", rows: 11},
+			{id: "exterior", rows: 12},
 			{id: "floating_string", rows: 12},
 		} {
 			m := statusModel{bundle: bundle, width: size[0], height: size[1]}
@@ -748,7 +748,7 @@ func TestLightingEditorFlow(t *testing.T) {
 	}
 	m.editLightingAssignment("indoor_winter")
 	view := m.renderLighting()
-	if strings.Count(view, "│") != 11 || !strings.Contains(view, "Program type") || !strings.Contains(view, "Sequence") || !strings.Contains(view, "Lights") || !strings.Contains(view, "All day") || !strings.Contains(view, "│ Indoor winter") || !strings.Contains(view, "First date") || !strings.Contains(view, "[x] Turn lights off  [ ] Leave current light state") || !strings.Contains(view, "[x] enabled  [ ] disabled") {
+	if strings.Count(view, "│") != 12 || !strings.Contains(view, "Program type") || !strings.Contains(view, "Sequence") || !strings.Contains(view, "Lights") || !strings.Contains(view, "All day") || !strings.Contains(view, "│ Indoor winter") || !strings.Contains(view, "First date") || !strings.Contains(view, "[x] Turn lights off  [ ] Leave current light state") || !strings.Contains(view, "[x] enabled  [ ] disabled") {
 		t.Fatalf("schedule form is not rendered with explicit assignment controls: %s", view)
 	}
 	m.lighting.focus = assignmentDailyStartField
@@ -1085,7 +1085,7 @@ func TestTUIWLEDToSequenceAssignmentSwitch(t *testing.T) {
 	m.lighting.focus = assignmentTypeField
 	updated, _ := m.updateLighting(tea.KeyMsg{Type: tea.KeyRight})
 	m = updated.(statusModel)
-	if m.lighting.assignmentWLED() || len(m.lighting.fields) != 11 || m.lighting.fields[assignmentSequenceField].Value() != "christmas" {
+	if m.lighting.assignmentWLED() || len(m.lighting.fields) != 12 || m.lighting.fields[assignmentSequenceField].Value() != "christmas" {
 		t.Fatalf("WLED-to-sequence switch did not rebuild the form: %#v", m.lighting.labels)
 	}
 	m.lighting.fields[assignmentLightsField].SetValue("light.target")
@@ -1191,5 +1191,112 @@ func TestScheduleAgendaMarksToday(t *testing.T) {
 		if day.Today != (i == 1) {
 			t.Fatalf("day %d (%s) Today = %v", i, day.Date, day.Today)
 		}
+	}
+}
+
+func testFallbackBundle(t *testing.T) Bundle {
+	t.Helper()
+	b, err := saveColorSequence(Bundle{}, testColorSequence())
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm := ColorSequence{ID: "warm_white", Name: "Warm white", Steps: []ColorStep{{Name: "Warm", XY: []float64{.423, .399}, Brightness: 255, Hold: 1, Transition: 1}}}
+	if b, err = saveColorSequence(b, warm); err != nil {
+		t.Fatal(err)
+	}
+	if b, err = saveLightingAssignment(b, testLightingAssignment()); err != nil {
+		t.Fatal(err)
+	}
+	def := LightingAssignment{ID: "exterior_default", Name: "Exterior default", Sequence: "warm_white", Targets: []string{"light.exterior_lights"}, Start: "1-1", End: "12-31", On: "sunset", Off: "00:00", Finish: "off", Enabled: true, Fallback: true}
+	if b, err = saveLightingAssignment(b, def); err != nil {
+		t.Fatalf("default overlapping a regular assignment: %v", err)
+	}
+	return b
+}
+
+func TestFallbackAssignmentRules(t *testing.T) {
+	b := testFallbackBundle(t)
+	second := lightingAssignments(b)["exterior_default"]
+	second.ID, second.Name = "second_default", "Second default"
+	if _, err := saveLightingAssignment(b, second); err == nil || !strings.Contains(err.Error(), "overlap") {
+		t.Fatalf("overlapping defaults: %v", err)
+	}
+	looping := lightingAssignments(b)["exterior_default"]
+	looping.Sequence = "christmas"
+	if _, err := saveLightingAssignment(b, looping); err == nil || !strings.Contains(err.Error(), "plays once") {
+		t.Fatalf("looping default: %v", err)
+	}
+	wled := testWLEDAssignment()
+	wled.Fallback = true
+	if err := wled.Validate(); err == nil {
+		t.Fatal("WLED default accepted")
+	}
+	if err := validateLighting(b); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFallbackControllerFillsUnownedLights(t *testing.T) {
+	b := testFallbackBundle(t)
+	controller := lightingController(b)
+	if controller["mode"] != "queued" {
+		t.Fatalf("mode = %v", controller["mode"])
+	}
+	text := stringMustJSON(controller)
+	for _, want := range []string{
+		`"id":"release"`, `"id":"midnight"`,
+		`expand([\"light.accent_one\",\"light.accent_two\",\"light.accent_three\",\"light.front_door\"])`,
+		`is_state('input_select.lighting_assignment_exterior', 'idle')`,
+		`"lights":"{{ free }}"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("controller missing %s:\n%s", want, text)
+		}
+	}
+	actions := controller["actions"].([]any)
+	last := stringMustJSON(actions[len(actions)-1])
+	if !strings.Contains(last, "script.lighting_assignment_exterior_default") {
+		t.Fatalf("default does not run after regular starts: %s", last)
+	}
+	release := stringMustJSON(controller["triggers"].([]any)[len(controller["triggers"].([]any))-1])
+	if strings.Contains(release, "exterior_default") {
+		t.Fatalf("a default releasing must not refresh defaults: %s", release)
+	}
+	player := assignmentScript(lightingAssignments(b)["exterior_default"])
+	if player["mode"] != "restart" || !strings.Contains(stringMustJSON(player), `"entity_id":"{{ lights }}"`) {
+		t.Fatalf("default player = %s", stringMustJSON(player))
+	}
+}
+
+func TestTUIDefaultFieldRoundTrips(t *testing.T) {
+	m := statusModel{bundle: testFallbackBundle(t), width: 100, height: 30}
+	m.editLightingAssignment("exterior_default")
+	if !strings.Contains(m.renderLighting(), "Default") || m.lighting.fields[assignmentDefaultField].Value() != "enabled" {
+		t.Fatalf("default field = %q", m.lighting.fields[assignmentDefaultField].Value())
+	}
+	m.saveLightingForm()
+	if m.lighting.error != "" || !lightingAssignments(m.bundle)["exterior_default"].Fallback {
+		t.Fatalf("TUI save lost default: %q", m.lighting.error)
+	}
+}
+
+func TestLoadDraftBundleUpgradesOlderController(t *testing.T) {
+	dir := t.TempDir()
+	b := testLightingBundle(t)
+	old := lightingController(b)
+	old["mode"] = "single"
+	b, err := UpsertAutomation(b, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveBundle(dir, b); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadDraftBundle(dir, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBundle(loaded); err != nil {
+		t.Fatalf("older draft rejected after load: %v", err)
 	}
 }

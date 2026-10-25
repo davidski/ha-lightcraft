@@ -52,6 +52,7 @@ const (
 	assignmentDailyStopField
 	assignmentFinishField
 	assignmentEnabledField
+	assignmentDefaultField
 )
 
 const (
@@ -164,17 +165,18 @@ func (m *statusModel) openLightingAssignmentForm(a LightingAssignment) {
 		m.lighting.openForm("assignment", []string{"Program type", "Name", "WLED light", "Preset/playlist", "Program option", "First date", "Last date", "All day", "Daily start", "Daily stop", "When schedule stops", "Schedule"}, []string{assignmentTypeWLED, a.Name, a.WLED.Light, a.WLED.Select, a.WLED.Option, a.Start, a.End, map[bool]string{true: "enabled", false: "disabled"}[a.AllDay], dailyStart, dailyStop, a.Finish, map[bool]string{true: "enabled", false: "disabled"}[a.Enabled]})
 		return
 	}
-	m.lighting.openForm("assignment", []string{"Program type", "Name", "Sequence", "Lights", "First date", "Last date", "All day", "Daily start", "Daily stop", "When schedule stops", "Schedule"}, []string{assignmentTypeColor, a.Name, a.Sequence, strings.Join(a.Targets, ";"), a.Start, a.End, map[bool]string{true: "enabled", false: "disabled"}[a.AllDay], dailyStart, dailyStop, a.Finish, map[bool]string{true: "enabled", false: "disabled"}[a.Enabled]})
+	m.lighting.openForm("assignment", []string{"Program type", "Name", "Sequence", "Lights", "First date", "Last date", "All day", "Daily start", "Daily stop", "When schedule stops", "Schedule", "Default"}, []string{assignmentTypeColor, a.Name, a.Sequence, strings.Join(a.Targets, ";"), a.Start, a.End, map[bool]string{true: "enabled", false: "disabled"}[a.AllDay], dailyStart, dailyStop, a.Finish, map[bool]string{true: "enabled", false: "disabled"}[a.Enabled], map[bool]string{true: "enabled", false: "disabled"}[a.Fallback]})
 }
 
 func (m *statusModel) switchLightingAssignmentKind(wled bool, sequence string) {
 	e := &m.lighting
 	a := e.assignment
-	if len(e.fields) == 12 {
+	// Switching to WLED leaves a color form behind, and vice versa.
+	if !wled && len(e.fields) > wledEnabledField {
 		a.Name, a.Start, a.End = e.fields[assignmentNameField].Value(), e.fields[wledFirstDateField].Value(), e.fields[wledLastDateField].Value()
 		a.AllDay, a.On, a.Off = e.fields[wledAllDayField].Value() == "enabled", e.fields[wledDailyStartField].Value(), e.fields[wledDailyStopField].Value()
 		a.Finish, a.Enabled = e.fields[wledFinishField].Value(), e.fields[wledEnabledField].Value() == "enabled"
-	} else if len(e.fields) >= 9 {
+	} else if wled && len(e.fields) > assignmentEnabledField {
 		a.Name, a.Start, a.End, a.Finish = e.fields[1].Value(), e.fields[4].Value(), e.fields[5].Value(), e.fields[9].Value()
 		a.AllDay, a.On, a.Off = e.fields[6].Value() == "enabled", e.fields[7].Value(), e.fields[8].Value()
 		a.Enabled = e.fields[10].Value() == "enabled"
@@ -319,7 +321,7 @@ func (m *statusModel) saveLightingForm() {
 			a.On, a.Off, a.Finish = values[wledDailyStartField], values[wledDailyStopField], values[wledFinishField]
 			a.AllDay = values[wledAllDayField] == "enabled"
 			a.Enabled = values[wledEnabledField] == "enabled"
-			a.Sequence, a.Targets = "", nil
+			a.Sequence, a.Targets, a.Fallback = "", nil, false
 			a.WLED = &WLEDProgram{Light: values[wledLightField], Select: values[wledSelectField], Option: values[wledOptionField]}
 			if a.AllDay {
 				a.On, a.Off = "", ""
@@ -351,6 +353,7 @@ func (m *statusModel) saveLightingForm() {
 				return
 			}
 			a.Enabled = values[assignmentEnabledField] == "enabled"
+			a.Fallback = values[assignmentDefaultField] == "enabled"
 		}
 		if a.ID == "" {
 			a.ID = colorID(a.Name)
@@ -637,7 +640,7 @@ func (e lightingEditor) fieldOptions(bundle Bundle) []string {
 	if e.form == "assignment" && ((!e.assignmentWLED() && e.focus == assignmentFinishField) || (e.assignmentWLED() && e.focus == wledFinishField)) {
 		return []string{"off", "leave"}
 	}
-	if e.form == "assignment" && ((!e.assignmentWLED() && e.focus == assignmentEnabledField) || (e.assignmentWLED() && e.focus == wledEnabledField)) {
+	if e.form == "assignment" && ((!e.assignmentWLED() && (e.focus == assignmentEnabledField || e.focus == assignmentDefaultField)) || (e.assignmentWLED() && e.focus == wledEnabledField)) {
 		return []string{"enabled", "disabled"}
 	}
 	if e.form == "assignment" && e.focus == assignmentTypeField {
@@ -1002,7 +1005,7 @@ func (m statusModel) renderLighting() string {
 						line = selectedStyle.Render(line)
 					}
 					lines = append(lines, line)
-				} else if e.form == "assignment" && ((!e.assignmentWLED() && i == assignmentEnabledField) || (e.assignmentWLED() && i == wledEnabledField)) {
+				} else if e.form == "assignment" && ((!e.assignmentWLED() && (i == assignmentEnabledField || i == assignmentDefaultField)) || (e.assignmentWLED() && i == wledEnabledField)) {
 					enabled, disabled := "[ ] enabled", "[ ] disabled"
 					if field.Value() == "enabled" {
 						enabled = "[x] enabled"
@@ -1045,10 +1048,9 @@ func (m statusModel) renderLighting() string {
 				if e.assignmentWLED() {
 					hints = []string{"Choose Color sequence or WLED preset/playlist.", "Enter a descriptive schedule name.", "Enter chooses a WLED light.", "Enter chooses a WLED preset/playlist selector.", "Enter chooses an option from that selector.", "Use M-D or MM-DD, or YYYY-M-D or YYYY-MM-DD.", "Use the same format as First date; this date is included.", "Choose enabled or disabled. Daily fields are ignored when enabled.", "Use HH:MM or sunset.", "Use HH:MM; ignored when all day is enabled.", "Choose Turn lights off or Leave current light state.", "Choose enabled or disabled."}
 				} else {
-					hints = []string{"Choose Color sequence or WLED preset/playlist.", "Enter a descriptive schedule name.", "Enter chooses a color sequence.", "Enter chooses lights; separate typed entity IDs with ;.", "Use M-D or MM-DD, or YYYY-M-D or YYYY-MM-DD.", "Use the same format as First date; this date is included.", "Choose enabled or disabled. Daily fields are ignored when enabled.", "Use HH:MM or sunset.", "Use HH:MM; ignored when all day is enabled.", "Choose Turn lights off or Leave current light state.", "Choose enabled or disabled."}
+					hints = []string{"Choose Color sequence or WLED preset/playlist.", "Enter a descriptive schedule name.", "Enter chooses a color sequence.", "Enter chooses lights; separate typed entity IDs with ;.", "Use M-D or MM-DD, or YYYY-M-D or YYYY-MM-DD.", "Use the same format as First date; this date is included.", "Choose enabled or disabled. Daily fields are ignored when enabled.", "Use HH:MM or sunset.", "Use HH:MM; ignored when all day is enabled.", "Choose Turn lights off or Leave current light state.", "Choose enabled or disabled.", "Enabled: fills lights no other schedule uses."}
 				}
 				lines = append(lines, hints[e.focus])
-				lines = append(lines, "Dates include the last day. All-day assignments ignore daily hours.")
 			}
 			if e.form == "pause" {
 				lines = append(lines, "Stops this player and applies its stop behavior: "+e.assignment.Finish)

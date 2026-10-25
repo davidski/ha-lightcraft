@@ -74,7 +74,8 @@ compiled into generated scripts.
   is supported by the CLI and web import flows. Imports then retire the
   legacy selector pieces (`script.holiday_lights`, `input_select.holiday`,
   and the `exterior_lights_activate` / `1665867675382` exterior on/off
-  automations); HA owns default exterior lighting outside the package. Imports
+  automations). Default lighting (for example, exterior warm white) is a
+  Lightcraft default schedule, not an HA-owned automation. Imports
   also regenerate a missing assignment playback helper and the
   `lighting_assignments` controller when assignment players arrive without
   them; matching entries are left unchanged.
@@ -141,13 +142,20 @@ time rules again. WLED and color
 assignments participate in the same resource-overlap checks, including a WLED
 select entity, so two assignments cannot contend for the same managed resource.
 
-The package also carries a derived `homeassistant.customize` block that sets a
-`targets` attribute (the assignment's lights) on each playback helper. It is
-regenerated from the assignment scripts on every package write and dropped on
-import, so it is never authored or diffed. HA-owned automations, such as the
-exterior default, read it to leave lights alone while a running or paused
-assignment owns them and light the rest. A helper without the attribute must
-be treated as owning everything.
+A default schedule (`fallback: true` in the assignment variables) is a
+color-sequence assignment with the lowest priority. It never conflicts with
+regular assignments; only two defaults on the same light in overlapping
+windows are rejected. It must use a sequence that plays once, so it sets its
+lights and holds them rather than cycling. Because Lightcraft knows every
+assignment's lights when it generates YAML, the controller computes the
+default's lights at run time as its targets (groups expanded) minus the lights
+of every regular assignment whose helper is not `idle`. Paused counts as owned,
+so a paused assignment keeps its lights dark. The controller runs defaults
+after all regular stops and starts. It restarts a default player only when that
+player is off or a regular helper has just changed to `idle` (the `release`
+trigger), so the regular five-minute check never reapplies the default over
+manual changes. The controller is `queued` so a release caused by its own stops
+runs as a follow-up. At midnight it also returns paused helpers to `idle`.
 
 ## Compatibility and ownership
 
@@ -199,14 +207,15 @@ and preset/playlist definitions remain owned and previewed by the WLED app.
 5. Back up the imported state locally.
 6. Update only changed or explicitly approved entries; never replace an entire
    HA category.
-7. Reload the affected HA YAML domains, plus core config when scripts change
-   so the derived assignment `targets` customize applies.
+7. Reload the affected HA YAML domains.
 8. Re-import and compare every affected entry.
 9. Restore the exact pre-publish files and reload them if any update,
    validation, reload, or verification fails.
 
 The assignment trust boundary rejects mixed content modes, malformed HA entity
-domains, and overlapping managed resources. Connected TUI/web authoring
+domains, and overlapping managed resources. A default schedule's start, refresh, and
+stop act only on its unowned lights; it never turns on or off a light that a
+running or paused regular assignment owns. Connected TUI/web authoring
 requires successful Home Assistant state and entity-registry inventory before
 saving WLED assignments; a registry failure blocks the save rather than
 broadening choices or downgrading validation. It checks the selected WLED light,

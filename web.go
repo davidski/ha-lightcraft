@@ -180,6 +180,7 @@ type webAssignment struct {
 	Finish     string
 	Enabled    bool
 	AllDay     bool
+	Fallback   bool
 }
 
 type webSelect struct {
@@ -318,7 +319,7 @@ func newWebApp(draftDir, baselineDir string) (*webApp, error) {
 }
 
 func newWebAppWithReferences(draftDir, baselineDir, referencesDir string, filePaths map[ConfigKind][]string) (*webApp, error) {
-	bundle, err := LoadBundleAtWithReferences(draftDir, referencesDir, filePaths)
+	bundle, err := LoadDraftBundle(draftDir, referencesDir, filePaths)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +350,7 @@ func newWebAppWithReferences(draftDir, baselineDir, referencesDir string, filePa
 // draft was reloaded. Callers hold a.mu.
 func (a *webApp) syncFromDisk() (bool, error) {
 	draftChanged := false
-	disk, err := LoadBundleAtWithReferences(a.draftDir, a.colorsDir, a.filePaths)
+	disk, err := LoadDraftBundle(a.draftDir, a.colorsDir, a.filePaths)
 	if err != nil {
 		return false, err
 	}
@@ -375,7 +376,7 @@ func (a *webApp) syncFromDisk() (bool, error) {
 
 // recordDiskState marks the current files as this app's own writes.
 func (a *webApp) recordDiskState() {
-	if disk, err := LoadBundleAtWithReferences(a.draftDir, a.colorsDir, a.filePaths); err == nil {
+	if disk, err := LoadDraftBundle(a.draftDir, a.colorsDir, a.filePaths); err == nil {
 		a.diskDraftHash = disk.Hash
 	}
 	if a.baselineDir != "" {
@@ -503,7 +504,7 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 		if assignment.WLED != nil {
 			kind = "wled"
 		}
-		item := webAssignment{ID: id, Name: assignment.Name, Kind: kind, Sequence: assignment.Sequence, Targets: strings.Join(assignment.Targets, ";"), Start: assignment.Start, End: assignment.End, On: assignment.On, Off: assignment.Off, Finish: assignment.Finish, Enabled: assignment.Enabled, AllDay: assignment.AllDay}
+		item := webAssignment{ID: id, Name: assignment.Name, Kind: kind, Sequence: assignment.Sequence, Targets: strings.Join(assignment.Targets, ";"), Start: assignment.Start, End: assignment.End, On: assignment.On, Off: assignment.Off, Finish: assignment.Finish, Enabled: assignment.Enabled, AllDay: assignment.AllDay, Fallback: assignment.Fallback}
 		if assignment.WLED != nil {
 			item.WLEDLight, item.WLEDSelect, item.WLEDOption = assignment.WLED.Light, assignment.WLED.Select, assignment.WLED.Option
 		}
@@ -803,7 +804,7 @@ func (a *webApp) persistDraft(bundle Bundle) error {
 	if err := ValidateBundle(bundle); err != nil {
 		return err
 	}
-	disk, err := LoadBundleAtWithReferences(a.draftDir, a.colorsDir, a.filePaths)
+	disk, err := LoadDraftBundle(a.draftDir, a.colorsDir, a.filePaths)
 	if err != nil {
 		return err
 	}
@@ -848,7 +849,7 @@ func (a *webApp) saveSequence(w http.ResponseWriter, r *http.Request) {
 func (a *webApp) saveSchedule(w http.ResponseWriter, r *http.Request) {
 	a.post(w, r, "schedules", "Draft updated.", "Could not update draft", true, func(bundle Bundle, form url.Values) (Bundle, error) {
 		pending := webAssignmentFromForm(form)
-		assignment := LightingAssignment{ID: pending.ID, Name: pending.Name, Sequence: pending.Sequence, Targets: form["targets"], Start: pending.Start, End: pending.End, On: pending.On, Off: pending.Off, Finish: pending.Finish, Enabled: pending.Enabled, AllDay: pending.AllDay}
+		assignment := LightingAssignment{ID: pending.ID, Name: pending.Name, Sequence: pending.Sequence, Targets: form["targets"], Start: pending.Start, End: pending.End, On: pending.On, Off: pending.Off, Finish: pending.Finish, Enabled: pending.Enabled, AllDay: pending.AllDay, Fallback: pending.Fallback}
 		if pending.Kind == "wled" {
 			assignment.Sequence, assignment.Targets = "", nil
 			assignment.WLED = &WLEDProgram{Light: pending.WLEDLight, Select: pending.WLEDSelect, Option: pending.WLEDOption}
@@ -890,6 +891,7 @@ func webAssignmentFromForm(form url.Values) webAssignment {
 		Targets: strings.Join(form["targets"], ";"), Start: strings.TrimSpace(form.Get("start")), End: strings.TrimSpace(form.Get("end")),
 		WLEDLight: form.Get("wled_light"), WLEDSelect: form.Get("wled_select"), WLEDOption: form.Get("wled_option"),
 		On: strings.TrimSpace(form.Get("on")), Off: strings.TrimSpace(form.Get("off")), Finish: strings.TrimSpace(form.Get("finish")), Enabled: form.Get("enabled") == "on", AllDay: form.Get("all_day") == "on",
+		Fallback: form.Get("fallback") == "on",
 	}
 }
 
@@ -990,7 +992,7 @@ func (a *webApp) publishDraft(w http.ResponseWriter, r *http.Request) {
 		if !a.baselineReady || a.publisher == nil {
 			return Bundle{}, fmt.Errorf("publishing is unavailable: %s", a.publishError)
 		}
-		disk, err := LoadBundleAtWithReferences(a.draftDir, a.colorsDir, a.filePaths)
+		disk, err := LoadDraftBundle(a.draftDir, a.colorsDir, a.filePaths)
 		if err != nil {
 			return Bundle{}, err
 		}
