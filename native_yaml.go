@@ -323,7 +323,11 @@ func importedBundleWithLegacyUpgrade(ctx context.Context, store NativeYAMLStore,
 			return Bundle{}, fmt.Errorf("automatically upgrade legacy lighting: %w", err)
 		}
 	}
-	return retireLegacyHoliday(bundle)
+	bundle, err = retireLegacyHoliday(bundle)
+	if err != nil {
+		return Bundle{}, err
+	}
+	return regenerateAssignmentControls(bundle)
 }
 
 func importDraft(ctx context.Context, store NativeYAMLStore, proposedDir, currentDir, colorsDir string, filePaths map[ConfigKind][]string) (Bundle, Bundle, bool, error) {

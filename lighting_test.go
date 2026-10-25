@@ -1160,3 +1160,27 @@ func TestLightingHASchema(t *testing.T) {
 		}
 	}
 }
+
+func TestRegenerateAssignmentControlsRepairsHandAddedPlayer(t *testing.T) {
+	want := testLightingBundle(t)
+	same, err := regenerateAssignmentControls(want)
+	if err != nil || same.Hash != want.Hash {
+		t.Fatalf("matching bundle changed: %v", err)
+	}
+	// Simulate a player script added on the HA side: no helper, old controller.
+	partial, err := saveLightingAssignment(func() Bundle { b, _ := saveColorSequence(Bundle{}, testColorSequence()); return b }(), testLightingAssignment())
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial.Files[Scripts].Data.(map[string]any)[assignmentPrefix+"living_room"] = want.Files[Scripts].Data.(map[string]any)[assignmentPrefix+"living_room"]
+	got, err := regenerateAssignmentControls(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateLighting(got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Hash != want.Hash {
+		t.Fatalf("regenerated bundle differs from editor-saved bundle")
+	}
+}

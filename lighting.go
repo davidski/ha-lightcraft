@@ -517,6 +517,35 @@ func saveLightingAssignment(bundle Bundle, a LightingAssignment) (Bundle, error)
 	return withHash(result)
 }
 
+// regenerateAssignmentControls adds the playback helper and controller branch
+// for assignment players that arrived without them, e.g. scripts added on the
+// HA side. Matching entries are left unchanged.
+func regenerateAssignmentControls(bundle Bundle) (Bundle, error) {
+	assignments := lightingAssignments(bundle)
+	if len(assignments) == 0 {
+		return bundle, nil
+	}
+	result, err := cloneBundle(bundle)
+	if err != nil {
+		return Bundle{}, err
+	}
+	helpers, _ := result.Files[Helpers].Data.(map[string]any)
+	if helpers == nil {
+		helpers = map[string]any{}
+	}
+	for id, a := range assignments {
+		if _, ok := helpers[assignmentPrefix+id]; !ok {
+			helpers[assignmentPrefix+id] = assignmentHelper(a)
+		}
+	}
+	result.Files[Helpers] = Config{Kind: Helpers, Data: helpers}
+	controller := lightingController(result)
+	if stringMustJSON(bundleEntries(result)[ConfigRef{Automations, lightingControllerID}]) == stringMustJSON(controller) {
+		return withHash(result)
+	}
+	return UpsertAutomation(result, controller)
+}
+
 func assignmentHelper(a LightingAssignment) map[string]any {
 	return map[string]any{"name": a.Name + " playback", "options": []any{"idle", "running", "paused"}, "icon": "mdi:play-pause"}
 }

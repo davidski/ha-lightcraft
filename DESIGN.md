@@ -74,7 +74,10 @@ compiled into generated scripts.
   is supported by the CLI and web import flows. Imports then retire the
   legacy selector pieces (`script.holiday_lights`, `input_select.holiday`,
   and the `exterior_lights_activate` / `1665867675382` exterior on/off
-  automations); HA owns default exterior lighting outside the package.
+  automations); HA owns default exterior lighting outside the package. Imports
+  also regenerate a missing assignment playback helper and the
+  `lighting_assignments` controller when assignment players arrive without
+  them; matching entries are left unchanged.
 - Color representation: sequence steps store and publish Home Assistant
   `xy_color`; RGB is derived only for readable swatches and previews. Older
   RGB-only sequence data is converted when imported.
