@@ -608,7 +608,10 @@ func assignmentHelper(a LightingAssignment) map[string]any {
 	return map[string]any{"name": a.Name + " playback", "options": []any{"idle", "running", "paused"}, "icon": "mdi:play-pause"}
 }
 
-func resolveLightingTargets(targets []string, states map[string]LightState) ([]string, error) {
+// resolveLightingTargets expands groups to member lights. Regular schedules need
+// color lights; anyLight admits brightness-only lights for default schedules,
+// where HA applies brightness and ignores the color.
+func resolveLightingTargets(targets []string, states map[string]LightState, anyLight bool) ([]string, error) {
 	var result []string
 	seen, visiting := map[string]bool{}, map[string]bool{}
 	var add func(string) error
@@ -632,7 +635,7 @@ func resolveLightingTargets(targets []string, states map[string]LightState) ([]s
 			}
 		} else {
 			modes := stringList(state.Attribute["supported_color_modes"])
-			if len(modes) > 0 && !supports(modes, "rgb", "rgbw", "rgbww", "xy", "hs") {
+			if !anyLight && len(modes) > 0 && !supports(modes, "rgb", "rgbw", "rgbww", "xy", "hs") {
 				return fmt.Errorf("%s does not support color", id)
 			}
 			result = append(result, id)

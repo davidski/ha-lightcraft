@@ -342,7 +342,7 @@ func (m *statusModel) saveLightingForm() {
 			a.WLED = nil
 			a.Targets = strings.FieldsFunc(values[assignmentLightsField], func(r rune) bool { return r == ';' || r == ',' || r == ' ' })
 			if len(m.inventoryStates) > 0 {
-				a.Targets, err = resolveLightingTargets(a.Targets, m.inventoryStates)
+				a.Targets, err = resolveLightingTargets(a.Targets, m.inventoryStates, values[assignmentDefaultField] == "enabled")
 				if err != nil {
 					e.error = err.Error()
 					return
@@ -711,7 +711,11 @@ func (m statusModel) lightingPickerIDs() []string {
 			}
 		}
 	}
-	for _, id := range colorLightIDs(m.inventoryStates, m.inventoryLocations) {
+	candidates := colorLightIDs(m.inventoryStates, m.inventoryLocations)
+	if m.lighting.fields[assignmentDefaultField].Value() == "enabled" {
+		candidates = inventoryIDs(m.inventoryStates, m.inventoryLocations)
+	}
+	for _, id := range candidates {
 		seen[id] = true
 	}
 	for _, id := range strings.Split(m.lighting.fields[assignmentLightsField].Value(), ";") {

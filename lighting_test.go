@@ -227,13 +227,16 @@ func TestLightingGroupTargets(t *testing.T) {
 		"light.one":   {Attribute: map[string]any{"supported_color_modes": []any{"xy"}}},
 		"light.two":   {Attribute: map[string]any{"supported_color_modes": []any{"rgbww"}}},
 	}
-	targets, err := resolveLightingTargets([]string{"light.group", "light.one"}, states)
+	targets, err := resolveLightingTargets([]string{"light.group", "light.one"}, states, false)
 	if err != nil || strings.Join(targets, ",") != "light.one,light.two" {
 		t.Fatalf("group resolution: %v %v", targets, err)
 	}
 	states["light.two"] = LightState{Attribute: map[string]any{"supported_color_modes": []any{"onoff"}}}
-	if _, err := resolveLightingTargets([]string{"light.group"}, states); err == nil {
+	if _, err := resolveLightingTargets([]string{"light.group"}, states, false); err == nil {
 		t.Fatal("non-color target accepted")
+	}
+	if targets, err := resolveLightingTargets([]string{"light.group"}, states, true); err != nil || len(targets) != 2 {
+		t.Fatalf("default rejected brightness-only light: %v %v", targets, err)
 	}
 }
 

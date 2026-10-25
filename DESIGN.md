@@ -145,7 +145,10 @@ select entity, so two assignments cannot contend for the same managed resource.
 A default schedule (`fallback: true` in the assignment variables) is a
 color-sequence assignment with the lowest priority. It never conflicts with
 regular assignments; only two defaults on the same light in overlapping
-windows are rejected. It must use a sequence that plays once, so it sets its
+windows are rejected. Unlike regular schedules, a default may target
+brightness-only lights (HA applies the brightness and ignores the color), so a
+mixed group such as the exterior lights can be one default. It must use a
+sequence that plays once, so it sets its
 lights and holds them rather than cycling. Because Lightcraft knows every
 assignment's lights when it generates YAML, the controller computes the
 default's lights at run time as its targets (groups expanded) minus the lights

@@ -735,8 +735,9 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	}
 	api.states["light.back_door_light"] = LightState{EntityID: "light.back_door_light", State: "off", Attribute: map[string]any{"supported_color_modes": []any{"onoff"}}}
 	app.refreshInventory(context.Background())
-	if ids := webTargetLightIDs(app.inventoryStates, app.inventoryLocations); strings.Contains(strings.Join(ids, ","), "light.back_door_light") {
-		t.Fatalf("web target picker included non-color light: %v", ids)
+	// Brightness-only lights are offered for defaults; regular schedules still reject them below.
+	if ids := webTargetLightIDs(app.inventoryStates, app.inventoryLocations); !strings.Contains(strings.Join(ids, ","), "light.back_door_light") {
+		t.Fatalf("web target picker omitted brightness-only light: %v", ids)
 	}
 	postForm(t, handler, "/schedule", url.Values{
 		"token": {app.token}, "hash": {app.bundle.Hash}, "id": {"back_door"}, "schedule_title": {"Back door"}, "sequence": {"red_loop"},
@@ -755,6 +756,9 @@ func TestWebScheduleLightPickerAndPlayback(t *testing.T) {
 	}
 	if _, exists := lightingAssignments(app.bundle)["back_door"]; exists {
 		t.Fatal("invalid schedule was added to the draft")
+	}
+	if !strings.Contains(body, "No color · defaults only") {
+		t.Fatal("brightness-only light is not labeled in the picker")
 	}
 	for _, failed := range []struct {
 		path, location string

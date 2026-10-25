@@ -204,6 +204,7 @@ type webLight struct {
 	Modes      string `json:"modes"`
 	Effects    string `json:"effects"`
 	Group      bool   `json:"group"`
+	NoColor    bool   `json:"no_color"`
 	Selected   bool   `json:"selected"`
 }
 
@@ -563,6 +564,7 @@ func (a *webApp) page(view, edit, selectedDate string) (webPage, error) {
 		if targetLights[id] {
 			scheduleLight := light
 			scheduleLight.Selected = webContains(page.Assignment.Targets, id)
+			scheduleLight.NoColor = !lightTargetSupportsColor(id, a.inventoryStates)
 			page.ScheduleLights = append(page.ScheduleLights, scheduleLight)
 		}
 		if containsString(wledLightIDs(a.inventoryStates, a.inventoryMetadata), id) {
@@ -860,7 +862,7 @@ func (a *webApp) saveSchedule(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if len(a.inventoryStates) > 0 {
 			var err error
-			assignment.Targets, err = resolveLightingTargets(assignment.Targets, a.inventoryStates)
+			assignment.Targets, err = resolveLightingTargets(assignment.Targets, a.inventoryStates, assignment.Fallback)
 			if err != nil {
 				return Bundle{}, fieldError{"targets", err}
 			}
@@ -1122,7 +1124,7 @@ func webLightIDs(bundle Bundle, states map[string]LightState, locations map[stri
 }
 
 func webTargetLightIDs(states map[string]LightState, locations map[string]LightLocation) []string {
-	return colorLightIDs(states, locations)
+	return inventoryIDs(states, locations)
 }
 
 func webLightSet(bundle Bundle, states map[string]LightState, locations map[string]LightLocation) map[string]bool {
