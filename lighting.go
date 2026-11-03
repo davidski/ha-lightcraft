@@ -374,7 +374,7 @@ func assignmentActiveTemplate() string {
 {% set t = now().strftime('%H:%M') %}
 {% set dates = (assignment.start <= d <= assignment.end) if assignment.start <= assignment.end else (d >= assignment.start or d <= assignment.end) %}
 {% set night = ('12:00' <= t < assignment.off) if assignment.off > '12:00' else (t >= '12:00' or t < assignment.off) %}
-{% set hours = true if assignment.all_day else ((is_state('sun.sun', 'below_horizon') and night) if assignment.on == 'sunset' else ((assignment.on <= t < assignment.off) if assignment.on < assignment.off else (t >= assignment.on or t < assignment.off))) %}
+{% set hours = true if assignment.all_day | default(false) else ((is_state('sun.sun', 'below_horizon') and night) if assignment.on == 'sunset' else ((assignment.on <= t < assignment.off) if assignment.on < assignment.off else (t >= assignment.on or t < assignment.off))) %}
 {{ assignment.enabled and dates and hours }}`
 }
 
