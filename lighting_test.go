@@ -1147,7 +1147,9 @@ func TestLightingHASchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := map[string]any{"scripts": bundle.Files[Scripts].Data, "automations": bundle.Files[Automations].Data, "helpers": bundle.Files[Helpers].Data, "active": assignmentActiveTemplate()}
+	payload := map[string]any{"scripts": bundle.Files[Scripts].Data, "automations": bundle.Files[Automations].Data, "helpers": bundle.Files[Helpers].Data, "active": assignmentActiveTemplate(),
+		"free":     fallbackFreeTemplate([]string{"owned_lights"}),
+		"free_all": fallbackFreeTemplate(nil)}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)

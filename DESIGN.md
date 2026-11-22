@@ -154,8 +154,11 @@ exterior lights can be the default. It must use a
 sequence that plays once, so it sets its
 lights and holds them rather than cycling. Because Lightcraft knows every
 assignment's lights when it generates YAML, the controller computes the
-default's lights at run time as its targets (groups expanded) minus the lights
-of every regular assignment whose helper is not `idle`. Paused counts as owned,
+default's lights at run time as its targets minus the lights of every regular
+assignment whose helper is not `idle`. HA group helpers are expanded. An
+integration group that lists `group_entities` (such as Zigbee2MQTT) is addressed
+as the group, for a single groupcast, while none of its members are owned;
+otherwise only its unowned members are addressed. Paused counts as owned,
 so a paused assignment keeps its lights dark. The controller runs defaults
 after all regular stops and starts. It restarts a default player only when that
 player is off or a regular helper has just changed to `idle` (the `release`

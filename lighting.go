@@ -425,10 +425,7 @@ func lightingController(bundle Bundle) map[string]any {
 			owned = append(owned, "(expand("+stringMustJSON(assignmentTargetLights(a))+") | map(attribute='entity_id') | list if not is_state('"+status+"', 'idle') else [])")
 		}
 	}
-	free := "{{ expand(assignment.targets) | map(attribute='entity_id') | list }}"
-	if len(owned) > 0 {
-		free = "{% set owned = " + strings.Join(owned, " + ") + " %}{{ expand(assignment.targets) | map(attribute='entity_id') | reject('in', owned) | list }}"
-	}
+	free := fallbackFreeTemplate(owned)
 	for _, id := range lightingIDs(bundle, 1) {
 		a := assignments[id]
 		status, player := "input_select."+assignmentPrefix+id, "script."+assignmentPrefix+id
@@ -471,6 +468,25 @@ func lightingController(bundle Bundle) map[string]any {
 	}
 	actions = append(append(append(actions, stopActions...), startActions...), fallbackActions...)
 	return map[string]any{"id": lightingControllerID, "alias": "Lighting assignment schedules", "mode": "queued", "max": 10, "triggers": triggers, "actions": actions}
+}
+
+// expand() opens HA group helpers but returns integration groups (Zigbee2MQTT)
+// as themselves. Such a group stays whole, for a single groupcast, until a
+// member is owned; then only its unowned members are addressed.
+func fallbackFreeTemplate(owned []string) string {
+	list := "[]"
+	if len(owned) > 0 {
+		list = strings.Join(owned, " + ")
+	}
+	return "{% set owned = " + list + " %}" +
+		"{% set ns = namespace(free=[]) %}" +
+		"{% for light in expand(assignment.targets) | map(attribute='entity_id') %}" +
+		"{% set members = state_attr(light, 'group_entities') or [light] %}" +
+		"{% set unowned = members | reject('in', owned) | list %}" +
+		"{% if light not in owned %}" +
+		"{% set ns.free = ns.free + ([light] if unowned | count == members | count else unowned) %}" +
+		"{% endif %}{% endfor %}" +
+		"{{ ns.free }}"
 }
 
 func putLightingScript(bundle *Bundle, id string, value map[string]any) {
