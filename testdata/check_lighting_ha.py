@@ -47,15 +47,15 @@ async def check():
     active("2026-12-31T20:00", True, start="2026-12-01", end="2026-12-31")
     active("2027-12-31T20:00", False, start="2026-12-01", end="2026-12-31")
     active("2026-12-31T20:00", False, enabled=False)
-    # Verify the actual templated light service data, including native HS import.
+    # Verify the actual templated light service data, in XY color.
     player = payload["scripts"]["lighting_assignment_exterior"]
     data = player["sequence"][2]["repeat"]["sequence"][0]["repeat"]["sequence"][0]["data"]
     step = payload["scripts"]["lighting_sequence_christmas"]["variables"]["sequence_data"]["steps"][0]
     result = Template(data, hass).async_render({"repeat": {"item": step}})
-    assert result == {"rgb_color": [255, 0, 0], "brightness": 200, "transition": 0.5}
-    step["color"] = {"hs_color": [359, 100]}
+    assert result == {"xy_color": [0.64, 0.33], "brightness": 200, "transition": 0.5}
+    step["xy"] = [0.3, 0.6]
     result = Template(data, hass).async_render({"repeat": {"item": step}})
-    assert result == {"hs_color": [359, 100], "brightness": 200, "transition": 0.5}
+    assert result == {"xy_color": [0.3, 0.6], "brightness": 200, "transition": 0.5}
     wled = payload["scripts"]["lighting_assignment_floating_string"]
     assert wled["sequence"][0] == {"action": "light.turn_on", "target": {"entity_id": "light.floating_string"}}
     assert wled["sequence"][1] == {"action": "select.select_option", "target": {"entity_id": "select.floating_string_preset"}, "data": {"option": "Christmas"}}
@@ -112,6 +112,24 @@ async def check():
     await run("2027-02-01T01:00")
     assert any(domain == "light" and action == "turn_off" for domain, action, _ in calls), calls
     assert hass.states.is_state("input_select.lighting_assignment_january", "idle")
+    members = ["light.porch", "light.spot", "light.back"]
+    for entity in members:
+        hass.states.async_set(entity, "off")
+    hass.states.async_set("light.zigbee", "off", {"group_entities": members})
+    hass.states.async_set("group.helper", "off", {"entity_id": members})
+
+    def free(target, owned, key="free"):
+        return Template(payload[key], hass).async_render({"assignment": {"targets": [target]}, "owned_lights": owned})
+
+    assert free("light.zigbee", [], "free_all") == ["light.zigbee"]
+    assert free("light.zigbee", ["light.unrelated"]) == ["light.zigbee"]
+    assert free("light.zigbee", members[:2]) == ["light.back"]
+    assert free("light.zigbee", members) == []
+    assert free("light.zigbee", ["light.zigbee"]) == []
+    hass.states.async_set("light.zigbee", "unavailable", {"group_entities": members})
+    assert free("light.zigbee", members[:2]) == ["light.back"]
+    assert sorted(free("group.helper", [])) == sorted(members)
+    assert free("group.helper", members[:2]) == ["light.back"]
     print("HA schemas, WLED actions, 18 template cases and controller lifecycle passed; no live services called.")
 
 
